@@ -2,13 +2,6 @@
 
 一个基于 React + Vite + TypeScript 的前端主题工程，适用于 XBoard / V2Board 风格面板，可自行修改站点名、后端地址、客服入口与下载链接后重新构建部署。
 
-演示站：
-- https://dk-theme.vercel.app/
-- 账号密码随意填写
-![](https://pub-56954302827c4850ac0f10fdb853206b.r2.dev/landscape/webp/20260418-2f94ebb2.webp)
-![](https://pub-56954302827c4850ac0f10fdb853206b.r2.dev/landscape/webp/20260418-7aaf7182.webp)
-![](https://pub-56954302827c4850ac0f10fdb853206b.r2.dev/landscape/webp/20260418-7cdc6df1.webp)
-![](https://pub-56954302827c4850ac0f10fdb853206b.r2.dev/landscape/webp/20260418-7debfa7e.webp)
 ## 项目特点
 
 - 支持自定义站点名
@@ -113,18 +106,16 @@ server {
 3. 如果仍显示演示数据，请确认 `VITE_ENABLE_MOCK=false`
 4. 运行 `npm run build`，确认成功产出 `dist/`
 
-## 主题定制 / 技术咨询
+## Demo
 
-如需定制主题或技术咨询，请联系：
+<img src="https://pub-56954302827c4850ac0f10fdb853206b.r2.dev/landscape/webp/20260418-2f94ebb2.webp" width="400" />
 
-[TG@derrickill](https://t.me/derrickill)
+<img src="https://pub-56954302827c4850ac0f10fdb853206b.r2.dev/landscape/webp/20260418-7aaf7182.webp" width="400" />
 
-[官方TG群组](https://t.me/DK_Theme)
+<img src="https://pub-56954302827c4850ac0f10fdb853206b.r2.dev/landscape/webp/20260418-7cdc6df1.webp" width="400" />
 
-## License
+<img src="https://pub-56954302827c4850ac0f10fdb853206b.r2.dev/landscape/webp/20260418-7debfa7e.webp" width="400" />
 
-MIT
+---
 
-## 说明
-
-本仓库仅提供前端主题工程，不包含任何生产后端凭据、账号数据或私有服务信息。
+鸣谢：https://github.com/Nice-Derrick/DK_Theme
