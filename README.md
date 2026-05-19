@@ -77,6 +77,10 @@ your-domain.com {
     encode zstd gzip
     try_files {path} /index.html
     file_server
+
+    reverse_proxy /api/* https://backend.example.com {
+        header_up Host {upstream_hostport}
+    }
 }
 ```
 ## 如何确认配置已生效
