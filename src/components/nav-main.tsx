@@ -8,6 +8,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import { startNavigationProgress } from '@/lib/navigation-progress'
 
@@ -24,6 +25,12 @@ export function NavMain({
   items: NavMainItem[]
 }) {
   const location = useLocation()
+  const { isMobile, setOpenMobile } = useSidebar()
+
+  function handleNavigate() {
+    startNavigationProgress()
+    if (isMobile) setOpenMobile(false)
+  }
 
   return (
     <SidebarGroup className='px-3 py-3'>
@@ -43,7 +50,7 @@ export function NavMain({
                   tooltip={item.title}
                   className='rounded-2xl border border-transparent px-3.5 text-[15px] font-medium text-sidebar-foreground/78 shadow-none transition-all duration-200 hover:border-sidebar-border/70 hover:bg-white/70 hover:text-sidebar-foreground hover:shadow-sm dark:hover:bg-white/6 data-[active=true]:border-sidebar-border/80 data-[active=true]:bg-white data-[active=true]:text-sidebar-foreground data-[active=true]:shadow-[0_10px_30px_-18px_rgba(15,23,42,0.42)] dark:data-[active=true]:bg-white/8 dark:data-[active=true]:shadow-none [&>svg]:size-[18px] [&>svg]:text-sidebar-foreground/70 data-[active=true]:[&>svg]:text-primary'
                 >
-                  <Link to={item.url} onClick={() => startNavigationProgress()}>
+                  <Link to={item.url} onClick={handleNavigate}>
                     {item.icon && <item.icon />}
                     <span>{item.title}</span>
                   </Link>

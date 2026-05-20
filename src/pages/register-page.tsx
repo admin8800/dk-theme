@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowRight, LoaderCircle, MailCheck } from 'lucide-react'
@@ -21,19 +22,8 @@ import {
   sendRegisterEmailVerify,
   type RegisterInput,
 } from '@/lib/api/services/auth'
-
-function getErrorMessage(error: unknown, fallback: string) {
-  if (typeof error === 'object' && error !== null) {
-    const maybeResponse = 'response' in error ? (error as { response?: { data?: { message?: unknown } } }).response : undefined
-    const message = maybeResponse?.data?.message
-    if (typeof message === 'string' && message.trim()) return message
-
-    const directMessage = 'message' in error ? (error as { message?: unknown }).message : undefined
-    if (typeof directMessage === 'string' && directMessage.trim()) return directMessage
-  }
-
-  return fallback
-}
+import { getApiErrorMessage } from '@/lib/api/errors'
+import { getGuestSiteConfig } from '@/lib/api/services/site'
 
 export function RegisterPage() {
   const navigate = useNavigate()
@@ -42,6 +32,10 @@ export function RegisterPage() {
   const [pending, setPending] = useState(false)
   const [sendingCode, setSendingCode] = useState(false)
   const [countdown, setCountdown] = useState(0)
+  const siteConfigQuery = useQuery({ queryKey: ['guest-site-config'], queryFn: getGuestSiteConfig })
+  const siteConfig = siteConfigQuery.data
+  const registerEnabled = siteConfig?.register_enabled !== false
+  const inviteRequired = siteConfig?.is_invite_force === true
 
   const form = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
@@ -74,7 +68,7 @@ export function RegisterPage() {
       await sendRegisterEmailVerify(email)
       setCountdown(60)
     } catch (err) {
-      setError(getErrorMessage(err, '发送验证码失败，请稍后重试'))
+      setError(getApiErrorMessage(err, '发送验证码失败，请稍后重试'))
     } finally {
       setSendingCode(false)
     }
@@ -83,11 +77,23 @@ export function RegisterPage() {
   const onSubmit = form.handleSubmit(async (values) => {
     setPending(true)
     setError(null)
+    if (!registerEnabled) {
+      setError('当前站点暂未开放注册')
+      setPending(false)
+      return
+    }
+
+    if (inviteRequired && !values.invite_code?.trim()) {
+      form.setError('invite_code', { message: '请填写邀请码' })
+      setPending(false)
+      return
+    }
+
     try {
       await register(values)
       navigate('/dashboard')
     } catch (err) {
-      setError(getErrorMessage(err, '注册失败，请检查接口配置'))
+      setError(getApiErrorMessage(err, '注册失败，请稍后重试或联系客服'))
     } finally {
       setPending(false)
     }
@@ -141,9 +147,16 @@ export function RegisterPage() {
         </Field>
 
         <Field>
-          <FieldLabel htmlFor='invite_code'>邀请码（可选）</FieldLabel>
+          <FieldLabel htmlFor='invite_code'>{inviteRequired ? '邀请码' : '邀请码（可选）'}</FieldLabel>
           <Input id='invite_code' placeholder='填写邀请码可绑定邀请关系' className='transition-all duration-200 focus-visible:border-primary/60 focus-visible:ring-primary/20 dark:focus-visible:border-primary/60 dark:focus-visible:ring-primary/20' {...form.register('invite_code')} />
+          <FieldError errors={[form.formState.errors.invite_code]} />
         </Field>
+
+        {!registerEnabled ? (
+          <FieldError className='rounded-2xl border border-destructive/15 bg-destructive/6 px-4 py-3 text-sm text-destructive shadow-sm dark:border-destructive/20 dark:bg-destructive/10'>
+            当前站点暂未开放注册
+          </FieldError>
+        ) : null}
 
         {error ? (
           <FieldError className='rounded-2xl border border-destructive/15 bg-destructive/6 px-4 py-3 text-sm text-destructive shadow-sm dark:border-destructive/20 dark:bg-destructive/10'>
@@ -155,7 +168,7 @@ export function RegisterPage() {
           <Button
             type='submit'
             className='w-full rounded-xl shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:shadow-primary/20 disabled:translate-y-0 disabled:shadow-none'
-            disabled={pending}
+            disabled={pending || siteConfigQuery.isLoading || !registerEnabled}
           >
             {pending ? <LoaderCircle className='size-4 animate-spin' /> : <ArrowRight className='size-4 transition-transform group-hover/button:translate-x-0.5' />}
             {pending ? '注册中…' : '创建账户'}

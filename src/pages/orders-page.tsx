@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   cancelOrder,
+  checkOrderStatus,
   checkoutOrder,
   getOrderDetail,
   getOrders,
@@ -23,6 +24,7 @@ import {
 } from '@/lib/api/services/orders'
 import { formatCurrency, formatDateTime } from '@/lib/format'
 import type { Order, OrderDetail, PaymentMethod } from '@/lib/api/types'
+import { useAuth } from '@/features/auth/auth-context'
 
 const periodLabelMap: Record<string, string> = {
   month_price: '月付',
@@ -127,6 +129,7 @@ type OrderFilter = 'all' | 'pending' | 'completed' | 'cancelled'
 
 export function OrdersPage() {
   const queryClient = useQueryClient()
+  const { user, refresh } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const highlightedTradeNo = searchParams.get('trade_no')
   const [selectedTradeNo, setSelectedTradeNo] = useState<string | null>(null)
@@ -190,6 +193,25 @@ export function OrdersPage() {
     refetchIntervalInBackground: true,
   })
 
+  const detail = detailQuery.data
+  const balance = user?.balance ?? 0
+  const isFullyPaidByBalance = Boolean(detail && detail.total_amount <= 0)
+
+  const orderStatusQuery = useQuery({
+    queryKey: ['order-status', selectedTradeNo],
+    queryFn: () => checkOrderStatus(selectedTradeNo as string),
+    enabled: selectedTradeNo != null && (detail?.status === 0 || detail?.status === 1),
+    refetchInterval: 10000,
+    refetchIntervalInBackground: true,
+  })
+  useEffect(() => {
+    if (!selectedTradeNo || orderStatusQuery.data == null) return
+    queryClient.setQueryData<Order[]>(['orders'], (current) => sortOrders((current ?? []).map((item) => (
+      item.trade_no === selectedTradeNo ? { ...item, status: orderStatusQuery.data as number } : item
+    ))))
+    queryClient.setQueryData<OrderDetail | undefined>(['order-detail', selectedTradeNo], (current) => current ? { ...current, status: orderStatusQuery.data as number } : current)
+  }, [orderStatusQuery.data, queryClient, selectedTradeNo])
+
   const cancelOrderMutation = useMutation({
     mutationFn: cancelOrder,
     onSuccess: (_data, variables) => {
@@ -218,6 +240,7 @@ export function OrdersPage() {
       queryClient.setQueryData<OrderDetail | undefined>(['order-detail', variables.trade_no], (current) => current ? { ...current, status: 1 } : current)
       void queryClient.invalidateQueries({ queryKey: ['orders'], refetchType: 'inactive' })
       void queryClient.invalidateQueries({ queryKey: ['order-detail', variables.trade_no], refetchType: 'inactive' })
+      void refresh()
       if (checkoutUrl) {
         window.open(checkoutUrl, '_blank', 'noopener,noreferrer')
       }
@@ -231,7 +254,6 @@ export function OrdersPage() {
   const completedCount = orders.filter((item) => item.status === 3).length
   const cancelledCount = orders.filter((item) => item.status === 2).length
   const totalAmount = orders.reduce((sum, item) => sum + item.total_amount, 0)
-  const detail = detailQuery.data
 
   function handleCancelOrder() {
     if (!selectedTradeNo) {
@@ -246,7 +268,12 @@ export function OrdersPage() {
       toast.error('请先选择订单')
       return
     }
-    if (!selectedPaymentMethodId) {
+    if (isFullyPaidByBalance) {
+      checkoutOrderMutation.mutate({ trade_no: selectedTradeNo, method: 0 })
+      return
+    }
+
+    if (selectedPaymentMethodId == null) {
       toast.error('请选择支付方式')
       return
     }
@@ -314,7 +341,7 @@ export function OrdersPage() {
               {ordersQuery.isError ? (
                 <div className='rounded-3xl border border-rose-200 bg-rose-50/80 p-6 dark:border-rose-500/30 dark:bg-rose-500/10'>
                   <div className='text-base font-medium text-rose-700 dark:text-rose-300'>订单列表加载失败</div>
-                  <div className='mt-2 text-sm text-rose-600/90 dark:text-rose-200/80'>请检查订单接口是否可用，或稍后重新加载。</div>
+                  <div className='mt-2 text-sm text-rose-600/90 dark:text-rose-200/80'>订单暂时加载失败，请稍后重新加载。</div>
                   <div className='mt-4'>
                     <Button variant='outline' className='bg-white/90 dark:bg-transparent' onClick={() => ordersQuery.refetch()}>
                       重新加载
@@ -373,7 +400,7 @@ export function OrdersPage() {
               {detailQuery.isError ? (
                 <div className='rounded-3xl border border-rose-200 bg-rose-50/80 p-6 dark:border-rose-500/30 dark:bg-rose-500/10'>
                   <div className='text-base font-medium text-rose-700 dark:text-rose-300'>订单详情加载失败</div>
-                  <div className='mt-2 text-sm text-rose-600/90 dark:text-rose-200/80'>请检查详情接口返回结构，或点击按钮重新加载。</div>
+                  <div className='mt-2 text-sm text-rose-600/90 dark:text-rose-200/80'>订单详情暂时加载失败，请点击按钮重新加载。</div>
                   <div className='mt-4'>
                     <Button variant='outline' className='bg-white/90 dark:bg-transparent' onClick={() => detailQuery.refetch()}>
                       重新加载详情
@@ -450,14 +477,20 @@ export function OrdersPage() {
         <DialogContent className='border-slate-200/90 bg-white/96 shadow-2xl shadow-slate-200/70 dark:border-border dark:bg-card dark:shadow-black/30'>
           <DialogHeader>
             <DialogTitle>选择支付方式</DialogTitle>
-            <DialogDescription>请选择支付方式</DialogDescription>
+            <DialogDescription>{isFullyPaidByBalance ? '订单已由账户余额抵扣，确认后即可开通。' : '请选择一个可用的在线支付方式完成剩余金额。'}</DialogDescription>
           </DialogHeader>
           <div className='space-y-4'>
-            {paymentMethodsQuery.isError ? (
+            {detail && detail.balance_amount > 0 ? (
+              <div className='rounded-3xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200'>
+                已使用账户余额抵扣 {formatCurrency(detail.balance_amount)}，当前余额 {formatCurrency(balance)}。
+              </div>
+            ) : null}
+
+            {!isFullyPaidByBalance && paymentMethodsQuery.isError ? (
               <div className='rounded-3xl border border-rose-200 bg-rose-50/80 p-4 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200'>
                 支付方式加载失败，请稍后重试。
               </div>
-            ) : paymentMethodsQuery.data?.length ? paymentMethodsQuery.data.map((method: PaymentMethod) => {
+            ) : !isFullyPaidByBalance && paymentMethodsQuery.data?.length ? paymentMethodsQuery.data.map((method: PaymentMethod) => {
               const active = method.id === selectedPaymentMethodId
               return (
                 <button
@@ -472,13 +505,13 @@ export function OrdersPage() {
                   <div className='font-medium text-slate-900 dark:text-foreground'>{method.name}</div>
                 </button>
               )
-            }) : (
+            }) : !isFullyPaidByBalance ? (
               <div className='rounded-3xl border border-dashed border-slate-200/80 bg-slate-50/70 p-6 text-sm text-slate-500 dark:border-border/70 dark:bg-background/20 dark:text-muted-foreground'>
                 当前没有可用的支付方式。
               </div>
-            )}
+            ) : null}
             <div className='flex flex-col gap-3 sm:flex-row'>
-              <Button className='w-full sm:w-auto' onClick={handleCheckoutOrder} disabled={checkoutOrderMutation.isPending}>{checkoutOrderMutation.isPending ? '跳转中...' : '确认支付'}</Button>
+              <Button className='w-full sm:w-auto' onClick={handleCheckoutOrder} disabled={checkoutOrderMutation.isPending}>{checkoutOrderMutation.isPending ? '处理中...' : isFullyPaidByBalance ? '确认开通' : '确认支付'}</Button>
               <Button variant='outline' className='w-full bg-white/90 sm:w-auto dark:bg-transparent' onClick={() => setPaymentDialogOpen(false)}>取消</Button>
             </div>
           </div>

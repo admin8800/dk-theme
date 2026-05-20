@@ -194,6 +194,7 @@ export function KnowledgePage() {
 
   const knowledgeQuery = useQuery({ queryKey: ['knowledge-articles'], queryFn: getKnowledgeArticles })
   const noticesQuery = useQuery({ queryKey: ['support-notices'], queryFn: getNotices })
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | 'all'>('all')
 
   const articleDetailQuery = useQuery({
     queryKey: ['knowledge-article-detail', selectedArticleId],
@@ -201,7 +202,19 @@ export function KnowledgePage() {
     enabled: selectedArticleId != null,
   })
 
-  const articles = useMemo(() => knowledgeQuery.data ?? [], [knowledgeQuery.data])
+  const categories = useMemo(() => {
+    const categoryMap = new Map<number, string>()
+    for (const article of knowledgeQuery.data ?? []) {
+      if (article.category_id == null) continue
+      categoryMap.set(article.category_id, article.category ?? `分类 ${article.category_id}`)
+    }
+    return Array.from(categoryMap, ([id, name]) => ({ id, name }))
+  }, [knowledgeQuery.data])
+  const articles = useMemo(() => {
+    const data = knowledgeQuery.data ?? []
+    if (selectedCategoryId === 'all') return data
+    return data.filter((article) => article.category_id === selectedCategoryId)
+  }, [knowledgeQuery.data, selectedCategoryId])
   const notices = useMemo(() => noticesQuery.data ?? [], [noticesQuery.data])
 
   function openArticle(article: KnowledgeArticle) {
@@ -255,6 +268,31 @@ export function KnowledgePage() {
             <CardTitle>知识库文章</CardTitle>
             <CardDescription>查看知识库文章列表与文档详情。</CardDescription>
           </CardHeader>
+          {categories.length > 0 ? (
+            <div className='flex flex-wrap gap-2 px-6 pb-4'>
+              <Button
+                type='button'
+                size='sm'
+                variant={selectedCategoryId === 'all' ? 'default' : 'outline'}
+                className={selectedCategoryId === 'all' ? 'rounded-full' : 'rounded-full bg-white/90 dark:bg-transparent'}
+                onClick={() => setSelectedCategoryId('all')}
+              >
+                全部
+              </Button>
+              {categories.map((category) => (
+                <Button
+                  key={category.id}
+                  type='button'
+                  size='sm'
+                  variant={selectedCategoryId === category.id ? 'default' : 'outline'}
+                  className={selectedCategoryId === category.id ? 'rounded-full' : 'rounded-full bg-white/90 dark:bg-transparent'}
+                  onClick={() => setSelectedCategoryId(category.id)}
+                >
+                  {category.name}
+                </Button>
+              ))}
+            </div>
+          ) : null}
           <CardContent className='space-y-3'>
             {knowledgeQuery.isError ? (
               <div className='rounded-3xl border border-rose-200 bg-rose-50/80 p-6 dark:border-rose-500/30 dark:bg-rose-500/10'>

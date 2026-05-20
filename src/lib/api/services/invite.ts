@@ -2,7 +2,7 @@ import axios from 'axios';
 import { apiClient } from '@/lib/api/client';
 import { appConfig } from '@/lib/config';
 import { mockInvite } from '@/lib/api/mock';
-import type { ApiEnvelope, InviteStat } from '@/lib/api/types';
+import type { ApiEnvelope, InviteCommissionRecord, InviteStat } from '@/lib/api/types';
 
 type RawInviteCode = {
   code: string
@@ -25,6 +25,8 @@ type ApiFailureEnvelope = {
   status?: string | number
   error?: string | null
 }
+
+type RawInviteDetailRecord = Record<string, unknown>
 
 function isApiSuccess(status: ApiStatus) {
   if (status == null) return true
@@ -75,6 +77,32 @@ function normalizeInviteStat(data: RawInviteFetchData): InviteStat {
       commission_balance: Number(rawStat[1] ?? 0),
       commission_pending: Number(rawStat[2] ?? 0),
     },
+  }
+}
+
+function toNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+function toStringValue(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function normalizeInviteDetail(item: RawInviteDetailRecord, index: number): InviteCommissionRecord {
+  const amount = toNumber(item.amount ?? item.commission ?? item.commission_amount)
+  const email = toStringValue(item.email ?? item.user_email)
+  return {
+    id: toStringValue(item.id) ?? index,
+    title: toStringValue(item.title) ?? (email ? `Invite commission: ${email}` : `Invite commission #${index + 1}`),
+    amount,
+    created_at: toNumber(item.created_at),
+    status: toStringValue(item.status) ?? toNumber(item.status),
+    type: toStringValue(item.type) ?? 'commission',
   }
 }
 
@@ -131,4 +159,30 @@ export async function generateInviteCode() {
 
     throw new Error(getAxiosErrorMessage(error, '生成邀请码失败'))
   }
+}
+
+export async function getInviteDetails() {
+  if (appConfig.enableMock) {
+    return [
+      {
+        id: 'mock-1',
+        title: 'Invite commission',
+        amount: mockInvite.stat.commission_balance,
+        created_at: Math.floor(Date.now() / 1000) - 86400,
+        status: 'success',
+        type: 'commission',
+      },
+    ] satisfies InviteCommissionRecord[]
+  }
+
+  const response = await apiClient.get<ApiEnvelope<RawInviteDetailRecord[]>>('/api/v1/user/invite/details')
+  const data = Array.isArray(response.data.data) ? response.data.data : []
+  return data.map(normalizeInviteDetail)
+}
+
+export async function withdrawCommission(payload: { withdraw_method: string; withdraw_account: string }) {
+  if (appConfig.enableMock) return { success: true }
+
+  const response = await apiClient.post<ApiEnvelope<unknown>>('/api/v1/user/ticket/withdraw', payload)
+  return response.data.data
 }

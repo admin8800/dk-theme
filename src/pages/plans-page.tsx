@@ -6,12 +6,14 @@ import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/features/auth/auth-context'
 import type { Plan } from '@/lib/api/types'
-import { createOrder, getOrders } from '@/lib/api/services/orders'
+import { checkCoupon, createOrder, getOrders, type CouponCheckResult } from '@/lib/api/services/orders'
 import { getPlans } from '@/lib/api/services/user'
 import { formatBytes, formatCurrency, formatDateTime } from '@/lib/format'
+import { getApiErrorMessage } from '@/lib/api/errors'
 
 type RecurringPeriodKey = 'month_price' | 'quarter_price' | 'half_year_price' | 'year_price' | 'two_year_price' | 'three_year_price'
 type OneTimePeriodKey = 'onetime_price' | 'reset_price'
@@ -85,16 +87,6 @@ function getRecurringPeriodOption(period: RecurringPeriodKey) {
   return recurringPeriodOptions.find((option) => option.key === period) ?? recurringPeriodOptions[0]
 }
 
-function getErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message.trim()) return error.message
-  if (typeof error === 'object' && error !== null) {
-    const maybeResponse = 'response' in error ? (error as { response?: { data?: { message?: unknown } } }).response : undefined
-    const message = maybeResponse?.data?.message
-    if (typeof message === 'string' && message.trim()) return message
-  }
-  return fallback
-}
-
 function getYearSaving(plan: Plan) {
   if (!plan.month_price || !plan.year_price) return null
   const saving = plan.month_price * 12 - plan.year_price
@@ -102,12 +94,14 @@ function getYearSaving(plan: Plan) {
 }
 
 export function PlansPage() {
-  const { user, subscribe } = useAuth()
+  const { user, subscribe, refresh } = useAuth()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const plansQuery = useQuery({ queryKey: ['plans'], queryFn: getPlans })
   const ordersQuery = useQuery({ queryKey: ['orders'], queryFn: getOrders })
   const [selectedRecurringPeriod, setSelectedRecurringPeriod] = useState<RecurringPeriodKey>('year_price')
+  const [couponCode, setCouponCode] = useState('')
+  const [couponResult, setCouponResult] = useState<CouponCheckResult | null>(null)
 
   const plans = plansQuery.data ?? []
   const pendingOrders = (ordersQuery.data ?? []).filter((order) => order.status === 0)
@@ -136,11 +130,30 @@ export function PlansPage() {
     mutationFn: createOrder,
     onSuccess: async (tradeNo) => {
       toast.success(`订单已创建：${tradeNo}`)
-      await queryClient.invalidateQueries({ queryKey: ['orders'] })
+      await Promise.all([
+        refresh(),
+        queryClient.invalidateQueries({ queryKey: ['orders'] }),
+      ])
       navigate(`/orders?trade_no=${encodeURIComponent(tradeNo)}`)
     },
     onError: (error) => {
-      toast.error(getErrorMessage(error, '创建订单失败，请稍后重试'))
+      toast.error(getApiErrorMessage(error, '创建订单失败，请稍后重试'))
+    },
+  })
+
+  const checkCouponMutation = useMutation({
+    mutationFn: ({ code, planId, period }: { code: string; planId?: number; period?: string }) => checkCoupon(code, planId, period),
+    onSuccess: (result) => {
+      setCouponResult(result)
+      if (result.valid) {
+        toast.success(result.discount_amount ? `优惠码可用，预计优惠 ${formatCurrency(result.discount_amount)}` : (result.message || '优惠码可用'))
+      } else {
+        toast.error(result.message || '优惠码不可用')
+      }
+    },
+    onError: (error) => {
+      setCouponResult(null)
+      toast.error(getApiErrorMessage(error, '优惠码校验失败，请稍后重试'))
     },
   })
 
@@ -159,7 +172,18 @@ export function PlansPage() {
     createOrderMutation.mutate({
       plan_id: plan.id,
       period,
+      coupon_code: couponResult?.valid && couponCode.trim() ? couponCode.trim() : undefined,
     })
+  }
+
+  function handleCheckCoupon(plan?: Plan, period?: PeriodKey) {
+    const code = couponCode.trim()
+    if (!code) {
+      setCouponResult(null)
+      toast.error('请先输入优惠码')
+      return
+    }
+    checkCouponMutation.mutate({ code, planId: plan?.id, period })
   }
 
   return (
@@ -235,6 +259,42 @@ export function PlansPage() {
             </div>
           ) : null}
         </div>
+      </div>
+
+      <div className='px-4 lg:px-6'>
+        <Card className='mx-auto max-w-6xl border-slate-200/90 bg-white/96 shadow-sm dark:border-border/70 dark:bg-card'>
+          <CardContent className='flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between'>
+            <div className='text-left'>
+              <div className='text-sm font-medium text-slate-900 dark:text-foreground'>优惠码</div>
+              <div className='mt-1 text-sm text-slate-500 dark:text-muted-foreground'>购买前可先校验优惠码，创建订单时会自动带上可用优惠码。</div>
+            </div>
+            <div className='flex w-full flex-col gap-3 sm:flex-row lg:max-w-xl'>
+              <Input
+                value={couponCode}
+                onChange={(event) => {
+                  setCouponCode(event.target.value)
+                  setCouponResult(null)
+                }}
+                placeholder='输入优惠码'
+                className='rounded-2xl bg-white/90 dark:bg-input/30'
+              />
+              <Button
+                type='button'
+                variant='outline'
+                className='rounded-2xl bg-white/90 dark:bg-transparent'
+                onClick={() => handleCheckCoupon(recurringPlans[0] ?? oneTimePlans[0], activeRecurringPeriod)}
+                disabled={checkCouponMutation.isPending}
+              >
+                {checkCouponMutation.isPending ? '校验中...' : '校验优惠码'}
+              </Button>
+            </div>
+            {couponResult?.valid ? (
+              <Badge variant='outline' className='border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'>
+                {couponResult.discount_amount ? `优惠 ${formatCurrency(couponResult.discount_amount)}` : '优惠码可用'}
+              </Badge>
+            ) : null}
+          </CardContent>
+        </Card>
       </div>
 
       {recurringPlans.length ? (

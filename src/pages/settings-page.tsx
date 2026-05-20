@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BellRing, KeyRound, RefreshCcw, ShieldCheck } from 'lucide-react'
+import { BellRing, Gift, KeyRound, RefreshCcw, Send, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
@@ -19,8 +19,12 @@ import {
   resetSubscribeSecurity,
   updateReminderSettings,
 } from '@/lib/api/services/settings'
+import { getTelegramBotInfo } from '@/lib/api/services/account'
+import { checkGiftCard, redeemGiftCard } from '@/lib/api/services/gift-card'
+import { getApiErrorMessage } from '@/lib/api/errors'
 import { getUserInfo } from '@/lib/api/services/user'
 import type { UserInfo } from '@/lib/api/types'
+import { useAuth } from '@/features/auth/auth-context'
 
 type PasswordForm = {
   old_password: string
@@ -77,7 +81,15 @@ function SettingCardHeader({
 
 export function SettingsPage() {
   const queryClient = useQueryClient()
+  const { refresh } = useAuth()
   const userQuery = useQuery({ queryKey: ['settings-user'], queryFn: getUserInfo })
+  const telegramQuery = useQuery({
+    queryKey: ['telegram-bot-info'],
+    queryFn: getTelegramBotInfo,
+    retry: false,
+    refetchOnMount: false,
+    staleTime: 5 * 60 * 1000,
+  })
 
   const [passwordForm, setPasswordForm] = useState<PasswordForm>({
     old_password: '',
@@ -87,6 +99,7 @@ export function SettingsPage() {
   const [remindExpire, setRemindExpire] = useState(true)
   const [remindTraffic, setRemindTraffic] = useState(true)
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
+  const [giftCardCode, setGiftCardCode] = useState('')
 
   useEffect(() => {
     const user = userQuery.data
@@ -131,11 +144,42 @@ export function SettingsPage() {
     onSuccess: async () => {
       toast.success('订阅信息已重置，请重新导入订阅')
       setResetDialogOpen(false)
-      await queryClient.invalidateQueries({ queryKey: ['settings-user'] })
-      setTimeout(() => window.location.reload(), 500)
+      await Promise.all([
+        refresh(),
+        queryClient.invalidateQueries({ queryKey: ['settings-user'] }),
+      ])
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, '重置订阅信息失败，请稍后重试'))
+    },
+  })
+
+  const checkGiftCardMutation = useMutation({
+    mutationFn: checkGiftCard,
+    onSuccess: (result) => {
+      if (!result.valid) {
+        toast.error(result.message || '礼品卡不可用')
+        return
+      }
+      toast.success(result.amount ? `礼品卡可用，面值 ${result.amount / 100} 元` : (result.message || '礼品卡可用'))
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, '礼品卡校验失败，请稍后重试'))
+    },
+  })
+
+  const redeemGiftCardMutation = useMutation({
+    mutationFn: redeemGiftCard,
+    onSuccess: async (result) => {
+      toast.success(result.amount ? `礼品卡已兑换：${result.amount / 100} 元` : (result.message || '礼品卡已兑换'))
+      setGiftCardCode('')
+      await Promise.all([
+        refresh(),
+        queryClient.invalidateQueries({ queryKey: ['settings-user'] }),
+      ])
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, '礼品卡兑换失败，请稍后重试'))
     },
   })
 
@@ -164,6 +208,24 @@ export function SettingsPage() {
     })
   }
 
+  function handleCheckGiftCard() {
+    const code = giftCardCode.trim()
+    if (!code) {
+      toast.error('请先输入礼品卡卡号')
+      return
+    }
+    checkGiftCardMutation.mutate(code)
+  }
+
+  function handleRedeemGiftCard() {
+    const code = giftCardCode.trim()
+    if (!code) {
+      toast.error('请先输入礼品卡卡号')
+      return
+    }
+    redeemGiftCardMutation.mutate(code)
+  }
+
   return (
     <div className='space-y-8'>
       <PageHeader
@@ -178,7 +240,7 @@ export function SettingsPage() {
               icon={<KeyRound className='size-5' />}
               badge='安全能力'
               title='修改密码'
-              description='按后端 changePassword 接口提交旧密码、新密码与重复新密码。'
+              description='定期更新密码可以降低账号被他人使用的风险。'
             />
             <CardContent className='flex flex-1 flex-col space-y-4 pt-0'>
               <div className='space-y-2'>
@@ -287,6 +349,61 @@ export function SettingsPage() {
                   <div className='mt-2 text-lg font-semibold text-slate-900 dark:text-foreground'>{remindTraffic ? '开启' : '关闭'}</div>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className='flex h-full flex-col border-slate-200/90 bg-white/96 shadow-lg shadow-slate-200/60 dark:border-border/70 dark:bg-card dark:shadow-none'>
+            <SettingCardHeader
+              icon={<Gift className='size-5' />}
+              badge='余额充值'
+              title='礼品卡兑换'
+              description='校验并兑换 Xboard 用户端礼品卡，成功后刷新账户余额。'
+            />
+            <CardContent className='flex flex-1 flex-col space-y-4 pt-0'>
+              <Input
+                value={giftCardCode}
+                onChange={(event) => setGiftCardCode(event.target.value)}
+                placeholder='请输入礼品卡卡号'
+                className='rounded-2xl border-slate-200/80 bg-white/90 shadow-sm dark:border-border/70 dark:bg-input/30'
+              />
+              <div className='mt-auto flex flex-col gap-3 pt-2 sm:flex-row'>
+                <Button variant='outline' className='w-full rounded-full bg-white/90 sm:w-auto dark:bg-transparent' onClick={handleCheckGiftCard} disabled={checkGiftCardMutation.isPending}>
+                  {checkGiftCardMutation.isPending ? '校验中...' : '校验礼品卡'}
+                </Button>
+                <Button className='w-full rounded-full sm:w-auto' onClick={handleRedeemGiftCard} disabled={redeemGiftCardMutation.isPending}>
+                  {redeemGiftCardMutation.isPending ? '兑换中...' : '兑换礼品卡'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className='flex h-full flex-col border-slate-200/90 bg-white/96 shadow-lg shadow-slate-200/60 dark:border-border/70 dark:bg-card dark:shadow-none'>
+            <SettingCardHeader
+              icon={<Send className='size-5' />}
+              badge='消息通知'
+              title='Telegram 绑定'
+              description='绑定后可接收账号提醒与服务通知。'
+            />
+            <CardContent className='flex flex-1 flex-col space-y-4 pt-0'>
+              {telegramQuery.data?.username || telegramQuery.data?.bind_url ? (
+                <>
+                  <div className='rounded-3xl border border-slate-200/80 bg-slate-50/85 p-5 dark:border-border/70 dark:bg-background/35'>
+                    <div className='text-sm text-slate-500 dark:text-muted-foreground'>Telegram Bot</div>
+                    <div className='mt-2 break-all text-lg font-semibold text-slate-900 dark:text-foreground'>
+                      {telegramQuery.data.username ? `@${telegramQuery.data.username.replace(/^@/, '')}` : '可绑定'}
+                    </div>
+                  </div>
+                  {telegramQuery.data.bind_url ? (
+                    <Button asChild className='mt-auto w-full rounded-full sm:w-auto'>
+                      <a href={telegramQuery.data.bind_url} target='_blank' rel='noreferrer'>打开绑定入口</a>
+                    </Button>
+                  ) : null}
+                </>
+              ) : (
+                <div className='rounded-3xl border border-slate-200/80 bg-slate-50/85 p-5 text-sm leading-6 text-slate-600 dark:border-border/70 dark:bg-background/35 dark:text-muted-foreground'>
+                  Telegram 功能暂未开启。
+                </div>
+              )}
             </CardContent>
           </Card>
 

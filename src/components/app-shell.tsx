@@ -24,7 +24,7 @@ export function AppShell() {
       <SidebarInset>
         <SiteHeader />
         <div className='flex flex-1 flex-col'>
-          <div className='@container/main flex flex-1 flex-col gap-6 py-6'>
+          <div className='@container/main page-transition flex flex-1 flex-col gap-6 py-6'>
             <RouteChunkErrorBoundary resetKey={resetKey}>
               <Suspense fallback={<AppShellOutletFallback />}>
                 <Outlet />

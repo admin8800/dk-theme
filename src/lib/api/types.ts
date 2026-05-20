@@ -88,7 +88,14 @@ export type KnowledgeArticle = {
   id: number;
   title: string;
   body?: string;
+  category?: string | null;
+  category_id?: number | null;
   updated_at?: number;
+};
+
+export type KnowledgeCategory = {
+  id: number;
+  name: string;
 };
 
 export type Notice = {
@@ -133,6 +140,15 @@ export type InviteStat = {
     commission_pending: number;
     invite_count: number;
   };
+};
+
+export type InviteCommissionRecord = {
+  id: string | number;
+  title: string;
+  amount: number;
+  created_at: number;
+  status?: string | number;
+  type?: string;
 };
 
 export type NodeStatus = {

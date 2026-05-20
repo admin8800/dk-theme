@@ -1,7 +1,7 @@
 import { apiClient } from '@/lib/api/client';
 import { appConfig } from '@/lib/config';
 import { mockKnowledgeArticles, mockNotices } from '@/lib/api/mock';
-import type { ApiEnvelope, KnowledgeArticle, Notice } from '@/lib/api/types';
+import type { ApiEnvelope, KnowledgeArticle, KnowledgeCategory, Notice } from '@/lib/api/types';
 
 type RawKnowledgeRecord = Record<string, unknown>
 type RawKnowledgeData = RawKnowledgeRecord | RawKnowledgeRecord[] | Record<string, RawKnowledgeRecord[]>
@@ -34,6 +34,8 @@ function normalizeKnowledgeArticle(value: unknown): KnowledgeArticle | null {
     id,
     title,
     body: toStringValue(article.body) ?? toStringValue(article.content) ?? undefined,
+    category: toStringValue(article.category) ?? toStringValue(article.category_name),
+    category_id: toNumber(article.category_id),
     updated_at: toNumber(article.updated_at) ?? toNumber(article.created_at) ?? undefined,
   }
 }
@@ -71,6 +73,19 @@ export async function getKnowledgeArticleDetail(id: number) {
   const article = flattenKnowledgeData(response.data.data).find((item) => item.id === id)
   if (!article) throw new Error('Knowledge article not found')
   return article
+}
+
+export async function getKnowledgeCategories() {
+  if (appConfig.enableMock) {
+    return [{ id: 0, name: 'All' }] satisfies KnowledgeCategory[]
+  }
+
+  const response = await apiClient.get<ApiEnvelope<Array<Record<string, unknown>>>>('/api/v1/user/knowledge/getCategory?language=zh-CN')
+  const data = Array.isArray(response.data.data) ? response.data.data : []
+  return data.map((item, index) => ({
+    id: toNumber(item.id) ?? index,
+    name: toStringValue(item.name ?? item.title) ?? `Category ${index + 1}`,
+  }))
 }
 
 export async function getNotices() {

@@ -12,6 +12,7 @@ type AuthContextValue = {
   hydrated: boolean;
   login: (values: LoginInput) => Promise<void>;
   logout: () => void;
+  refresh: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -42,6 +43,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void hydrate();
   }, []);
 
+  async function refreshAuthState() {
+    const currentToken = tokenStorage.get();
+    if (!currentToken) {
+      setToken(null);
+      setUser(null);
+      setSubscribe(null);
+      return;
+    }
+
+    const [nextUser, nextSubscribe] = await Promise.all([getUserInfo(), getSubscribeInfo()]);
+    setUser(nextUser);
+    setSubscribe(nextSubscribe);
+    setToken(currentToken);
+  }
+
   const value = useMemo<AuthContextValue>(() => ({
     token,
     user,
@@ -55,6 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(nextUser);
       setSubscribe(nextSubscribe);
     },
+    refresh: refreshAuthState,
     logout() {
       void logoutRequest();
       setToken(null);

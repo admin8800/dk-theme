@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Gift, Link as LinkIcon, Plus, ReceiptText, Users, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
@@ -22,113 +22,102 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { copyText } from '@/lib/clipboard'
-import { generateInviteCode, getInviteStat } from '@/lib/api/services/invite'
+import { transferCommissionToBalance } from '@/lib/api/services/account'
+import { generateInviteCode, getInviteDetails, getInviteStat, withdrawCommission } from '@/lib/api/services/invite'
+import { getApiErrorMessage } from '@/lib/api/errors'
 import { formatCurrency, formatDateTime } from '@/lib/format'
+import { useAuth } from '@/features/auth/auth-context'
 
 type WithdrawalChannel = 'alipay' | 'usdt' | 'paypal'
 
-type CommissionRecord = {
-  id: string
-  title: string
-  amount: number
-  created_at: number
-  type: 'commission' | 'withdraw' | 'transfer'
-  status: 'success' | 'pending'
-  channel?: WithdrawalChannel
-  account?: string
-}
+const withdrawalChannels: Array<{ value: WithdrawalChannel; label: string }> = [
+  { value: 'alipay', label: '支付宝' },
+  { value: 'usdt', label: 'USDT' },
+  { value: 'paypal', label: 'PayPal' },
+]
 
 function getInviteLink(code?: string) {
   if (!code || typeof window === 'undefined') return ''
   return `${window.location.origin}/register?code=${encodeURIComponent(code)}`
 }
 
-function getRecordTypeLabel(type: CommissionRecord['type']) {
+function getRecordTypeLabel(type?: string) {
   switch (type) {
-    case 'commission':
-      return '佣金发放'
     case 'withdraw':
-      return '佣金提现'
+      return '提现'
     case 'transfer':
-      return '划转到余额'
+      return '转余额'
+    default:
+      return '佣金'
   }
 }
 
-function getWithdrawalChannelLabel(channel?: WithdrawalChannel) {
-  switch (channel) {
-    case 'alipay':
-      return '支付宝'
-    case 'usdt':
-      return 'USDT'
-    case 'paypal':
-      return 'PayPal'
-    default:
-      return ''
-  }
+function isSuccessStatus(status: unknown) {
+  return status === 'success' || status === 'done' || status === 1 || status === '1'
 }
 
 export function InvitePage() {
   const queryClient = useQueryClient()
+  const { refresh } = useAuth()
   const inviteQuery = useQuery({ queryKey: ['invite'], queryFn: getInviteStat })
-  const invite = inviteQuery.data
+  const inviteDetailsQuery = useQuery({ queryKey: ['invite-details'], queryFn: getInviteDetails })
 
   const [withdrawOpen, setWithdrawOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [withdrawChannel, setWithdrawChannel] = useState<WithdrawalChannel>('alipay')
   const [withdrawAccount, setWithdrawAccount] = useState('')
   const [transferAmount, setTransferAmount] = useState('')
-  const [commissionBalance, setCommissionBalance] = useState(0)
-  const [commissionPending, setCommissionPending] = useState(0)
-  const [records, setRecords] = useState<CommissionRecord[]>([])
 
-  useEffect(() => {
-    if (!invite) return
-    setCommissionBalance(invite.stat.commission_balance)
-    setCommissionPending(invite.stat.commission_pending)
-    setRecords([
-      {
-        id: 'commission-1',
-        title: '邀请用户 INVITE-PLUS 产生返佣',
-        amount: 1800,
-        created_at: 1712731200,
-        type: 'commission',
-        status: 'success',
-      },
-      {
-        id: 'commission-2',
-        title: '邀请用户 INVITE-GIFT 订单待结算',
-        amount: 1200,
-        created_at: 1712698920,
-        type: 'commission',
-        status: 'pending',
-      },
-    ])
-  }, [invite])
-
-  const hasAvailableInviteCode = Boolean(invite?.codes.some((item) => item.status === 0))
+  const invite = inviteQuery.data
+  const records = inviteDetailsQuery.data ?? []
   const primaryCode = invite?.codes.find((item) => item.status === 0)?.code ?? invite?.codes[0]?.code
   const primaryInviteLink = useMemo(() => getInviteLink(primaryCode), [primaryCode])
-  const availableBalanceInCents = commissionBalance
+  const hasAvailableInviteCode = Boolean(invite?.codes.some((item) => item.status === 0))
+  const commissionBalance = invite?.stat.commission_balance ?? 0
+  const commissionPending = invite?.stat.commission_pending ?? 0
 
   const generateInviteMutation = useMutation({
     mutationFn: generateInviteCode,
-    onSuccess: async (result) => {
-      const previousCodes = invite?.codes.map((item) => item.code) ?? []
-      const updatedInvite = await queryClient.fetchQuery({
-        queryKey: ['invite'],
-        queryFn: getInviteStat,
-        staleTime: 0,
-      })
-
-      const newCode = typeof result === 'object' && result && 'code' in result && typeof result.code === 'string'
-        ? result.code
-        : updatedInvite.codes.find((item) => !previousCodes.includes(item.code))?.code
-
-      toast.success(newCode ? `邀请码已生成：${newCode}` : '邀请码已生成')
+    onSuccess: async () => {
+      toast.success('邀请码已生成')
+      await queryClient.invalidateQueries({ queryKey: ['invite'] })
     },
     onError: (error) => {
-      const message = error instanceof Error ? error.message : '生成邀请码失败，请稍后再试'
-      toast.error(message)
+      toast.error(getApiErrorMessage(error, '生成邀请码失败，请稍后重试'))
+    },
+  })
+
+  const withdrawMutation = useMutation({
+    mutationFn: withdrawCommission,
+    onSuccess: async () => {
+      toast.success('提现申请已提交')
+      setWithdrawChannel('alipay')
+      setWithdrawAccount('')
+      setWithdrawOpen(false)
+      await Promise.all([
+        refresh(),
+        queryClient.invalidateQueries({ queryKey: ['invite'] }),
+        queryClient.invalidateQueries({ queryKey: ['invite-details'] }),
+      ])
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, '提现申请提交失败，请稍后重试'))
+    },
+  })
+
+  const transferMutation = useMutation({
+    mutationFn: transferCommissionToBalance,
+    onSuccess: async () => {
+      toast.success('佣金已划转到账户余额')
+      setTransferAmount('')
+      setTransferOpen(false)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['invite'] }),
+        queryClient.invalidateQueries({ queryKey: ['invite-details'] }),
+      ])
+    },
+    onError: (error) => {
+      toast.error(getApiErrorMessage(error, '佣金划转失败，请稍后重试'))
     },
   })
 
@@ -142,18 +131,12 @@ export function InvitePage() {
       await copyText(primaryInviteLink)
       toast.success('邀请链接已复制')
     } catch {
-      toast.error('复制失败，请稍后再试')
+      toast.error('复制失败，请稍后重试')
     }
   }
 
-
   function handleWithdraw() {
     const account = withdrawAccount.trim()
-
-    if (!withdrawChannel) {
-      toast.error('请选择提现渠道')
-      return
-    }
 
     if (!account) {
       toast.error('请输入提现账号')
@@ -165,27 +148,10 @@ export function InvitePage() {
       return
     }
 
-    const channelLabel = getWithdrawalChannelLabel(withdrawChannel)
-    const amount = commissionBalance
-
-    setCommissionBalance(0)
-    setRecords((prev) => [
-      {
-        id: `withdraw-${Date.now()}`,
-        title: `${channelLabel} 提现申请`,
-        amount: Math.round(amount * 100),
-        created_at: Math.floor(Date.now() / 1000),
-        type: 'withdraw',
-        status: 'pending',
-        channel: withdrawChannel,
-        account,
-      },
-      ...prev,
-    ])
-    setWithdrawChannel('alipay')
-    setWithdrawAccount('')
-    setWithdrawOpen(false)
-    toast.success(`已提交${channelLabel}提现申请`)
+    withdrawMutation.mutate({
+      withdraw_method: withdrawChannel,
+      withdraw_account: account,
+    })
   }
 
   function handleTransfer() {
@@ -196,26 +162,13 @@ export function InvitePage() {
       return
     }
 
-    if (amount > commissionBalance) {
+    const amountInCents = Math.round(amount * 100)
+    if (amountInCents > commissionBalance) {
       toast.error('划转金额不能超过当前可提现返利')
       return
     }
 
-    setCommissionBalance((value) => Number((value - amount).toFixed(2)))
-    setRecords((prev) => [
-      {
-        id: `transfer-${Date.now()}`,
-        title: '推广佣金划转到余额',
-        amount: Math.round(amount * 100),
-        created_at: Math.floor(Date.now() / 1000),
-        type: 'transfer',
-        status: 'success',
-      },
-      ...prev,
-    ])
-    setTransferAmount('')
-    setTransferOpen(false)
-    toast.success('佣金已划转到余额')
+    transferMutation.mutate(amountInCents)
   }
 
   return (
@@ -254,18 +207,14 @@ export function InvitePage() {
                   <Gift className='size-4' />
                   可提现返利
                 </div>
-                <div className='mt-3 text-2xl font-semibold text-slate-900 dark:text-foreground'>
-                  {formatCurrency(availableBalanceInCents)}
-                </div>
+                <div className='mt-3 text-2xl font-semibold text-slate-900 dark:text-foreground'>{formatCurrency(commissionBalance)}</div>
               </div>
               <div className='rounded-3xl border border-slate-200/80 bg-slate-50/85 p-5 dark:border-border/70 dark:bg-background/35'>
                 <div className='flex items-center gap-2 text-sm text-slate-500 dark:text-muted-foreground'>
                   <LinkIcon className='size-4' />
                   待结算返利
                 </div>
-                <div className='mt-3 text-2xl font-semibold text-slate-900 dark:text-foreground'>
-                  {formatCurrency(commissionPending)}
-                </div>
+                <div className='mt-3 text-2xl font-semibold text-slate-900 dark:text-foreground'>{formatCurrency(commissionPending)}</div>
               </div>
             </div>
           </CardContent>
@@ -278,7 +227,7 @@ export function InvitePage() {
             <Card className='border-slate-200/90 bg-white/96 shadow-lg shadow-slate-200/60 dark:border-border/70 dark:bg-card dark:shadow-none'>
               <CardHeader>
                 <CardTitle>邀请码管理</CardTitle>
-                <CardDescription>创建和复制邀请码</CardDescription>
+                <CardDescription>创建和复制用户端邀请码</CardDescription>
               </CardHeader>
               <CardContent className='space-y-4'>
                 <div className='rounded-3xl border border-slate-200/80 bg-slate-50/90 p-5 dark:border-border/70 dark:bg-background/35'>
@@ -299,10 +248,9 @@ export function InvitePage() {
                     className='w-full rounded-2xl bg-white/90 dark:bg-transparent'
                     onClick={() => generateInviteMutation.mutate()}
                     disabled={generateInviteMutation.isPending || hasAvailableInviteCode}
-                    title={hasAvailableInviteCode ? '当前已有可用邀请码，请直接复制使用' : undefined}
                   >
                     <Plus className='size-4' />
-                    {generateInviteMutation.isPending ? '生成中…' : hasAvailableInviteCode ? '已有可用邀请码' : '生成邀请码'}
+                    {generateInviteMutation.isPending ? '生成中...' : hasAvailableInviteCode ? '已有可用邀请码' : '生成邀请码'}
                   </Button>
                 </div>
               </CardContent>
@@ -320,7 +268,7 @@ export function InvitePage() {
                 </Button>
                 <Button variant='outline' className='w-full rounded-2xl bg-white/90 dark:bg-transparent' onClick={() => setTransferOpen(true)}>
                   <Gift className='size-4' />
-                  划转到余额
+                  划转到账户余额
                 </Button>
               </CardContent>
             </Card>
@@ -331,50 +279,43 @@ export function InvitePage() {
               <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
                 <div>
                   <CardTitle>佣金记录</CardTitle>
-                  <CardDescription>返利记录</CardDescription>
+                  <CardDescription>返利、提现与划转记录</CardDescription>
                 </div>
-                <Badge variant='outline' className='bg-white/90 dark:bg-transparent'>共 {records.length} 条佣金记录</Badge>
+                <Badge variant='outline' className='bg-white/90 dark:bg-transparent'>共 {records.length} 条记录</Badge>
               </div>
             </CardHeader>
-            <CardContent className='space-y-6'>
-              <div className='space-y-3'>
-                <div className='flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-foreground'>
-                  <ReceiptText className='size-4 text-primary' />
-                  佣金发放记录
-                </div>
-                {records.map((item) => (
-                  <div
-                    key={item.id}
-                    className='flex flex-col gap-3 rounded-3xl border border-slate-200/80 bg-slate-50/85 p-5 dark:border-border/70 dark:bg-background/35 md:flex-row md:items-center md:justify-between'
-                  >
-                    <div className='min-w-0 space-y-1'>
-                      <div className='flex flex-wrap items-center gap-2'>
-                        <div className='break-words font-medium text-slate-900 dark:text-foreground'>{item.title}</div>
-                        <Badge
-                          variant='outline'
-                          className={item.status === 'success'
-                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
-                            : 'bg-white/90 dark:bg-transparent'}
-                        >
-                          {item.status === 'success' ? '已完成' : '处理中'}
-                        </Badge>
-                        <Badge variant='outline' className='bg-white/90 dark:bg-transparent'>
-                          {getRecordTypeLabel(item.type)}
-                        </Badge>
-                      </div>
-                      <div className='text-sm text-slate-500 dark:text-muted-foreground'>记录时间：{formatDateTime(item.created_at)}</div>
-                      {item.type === 'withdraw' && item.channel && item.account ? (
-                        <div className='break-all text-sm text-slate-500 dark:text-muted-foreground'>
-                          提现渠道：{getWithdrawalChannelLabel(item.channel)} · 账号：{item.account}
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className='text-lg font-semibold text-slate-900 dark:text-foreground'>{formatCurrency(item.amount)}</div>
-                  </div>
-                ))}
+            <CardContent className='space-y-3'>
+              <div className='flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-foreground'>
+                <ReceiptText className='size-4 text-primary' />
+                记录明细
               </div>
-
-
+              {inviteDetailsQuery.isLoading ? (
+                <div className='rounded-3xl border border-slate-200/80 bg-slate-50/85 p-5 text-sm text-slate-500 dark:border-border/70 dark:bg-background/35 dark:text-muted-foreground'>加载中...</div>
+              ) : records.length > 0 ? records.map((item) => (
+                <div
+                  key={String(item.id)}
+                  className='flex flex-col gap-3 rounded-3xl border border-slate-200/80 bg-slate-50/85 p-5 dark:border-border/70 dark:bg-background/35 md:flex-row md:items-center md:justify-between'
+                >
+                  <div className='min-w-0 space-y-1'>
+                    <div className='flex flex-wrap items-center gap-2'>
+                      <div className='break-words font-medium text-slate-900 dark:text-foreground'>{item.title}</div>
+                      <Badge
+                        variant='outline'
+                        className={isSuccessStatus(item.status)
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+                          : 'bg-white/90 dark:bg-transparent'}
+                      >
+                        {isSuccessStatus(item.status) ? '已完成' : '处理中'}
+                      </Badge>
+                      <Badge variant='outline' className='bg-white/90 dark:bg-transparent'>{getRecordTypeLabel(item.type)}</Badge>
+                    </div>
+                    <div className='text-sm text-slate-500 dark:text-muted-foreground'>记录时间：{formatDateTime(item.created_at)}</div>
+                  </div>
+                  <div className='text-lg font-semibold text-slate-900 dark:text-foreground'>{formatCurrency(item.amount)}</div>
+                </div>
+              )) : (
+                <div className='rounded-3xl border border-dashed border-slate-200/80 bg-slate-50/70 p-8 text-center text-sm text-slate-500 dark:border-border/70 dark:bg-background/20 dark:text-muted-foreground'>暂无佣金记录。</div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -388,7 +329,7 @@ export function InvitePage() {
           </DialogHeader>
           <div className='space-y-4'>
             <div className='rounded-2xl border border-slate-200/80 bg-slate-50/90 p-4 text-sm text-slate-600 dark:border-border/70 dark:bg-background/35 dark:text-muted-foreground'>
-              当前可提现返利：{formatCurrency(availableBalanceInCents)}
+              当前可提现返利：{formatCurrency(commissionBalance)}
             </div>
             <div className='grid gap-4 sm:grid-cols-2'>
               <div className='space-y-2'>
@@ -398,9 +339,9 @@ export function InvitePage() {
                     <SelectValue placeholder='请选择提现渠道' />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value='alipay'>支付宝</SelectItem>
-                    <SelectItem value='usdt'>USDT</SelectItem>
-                    <SelectItem value='paypal'>PayPal</SelectItem>
+                    {withdrawalChannels.map((channel) => (
+                      <SelectItem key={channel.value} value={channel.value}>{channel.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -414,11 +355,10 @@ export function InvitePage() {
                 />
               </div>
             </div>
-            <div className='rounded-2xl border border-dashed border-slate-200/80 bg-white/80 p-4 text-sm text-slate-600 dark:border-border/70 dark:bg-background/20 dark:text-muted-foreground'>
-              本次申请金额：{formatCurrency(availableBalanceInCents)}
-            </div>
             <div className='flex flex-col gap-3 sm:flex-row'>
-              <Button className='w-full sm:w-auto' onClick={handleWithdraw}>提交提现</Button>
+              <Button className='w-full sm:w-auto' onClick={handleWithdraw} disabled={withdrawMutation.isPending}>
+                {withdrawMutation.isPending ? '提交中...' : '提交提现'}
+              </Button>
               <Button variant='outline' className='w-full bg-white/90 sm:w-auto dark:bg-transparent' onClick={() => setWithdrawOpen(false)}>取消</Button>
             </div>
           </div>
@@ -428,12 +368,12 @@ export function InvitePage() {
       <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
         <DialogContent className='border-slate-200/90 bg-white/96 shadow-2xl shadow-slate-200/70 dark:border-border dark:bg-card dark:shadow-black/30'>
           <DialogHeader>
-            <DialogTitle>划转佣金到余额</DialogTitle>
+            <DialogTitle>划转佣金到账户余额</DialogTitle>
             <DialogDescription>输入金额后将返利划转到账户余额。</DialogDescription>
           </DialogHeader>
           <div className='space-y-4'>
             <div className='rounded-2xl border border-slate-200/80 bg-slate-50/90 p-4 text-sm text-slate-600 dark:border-border/70 dark:bg-background/35 dark:text-muted-foreground'>
-              当前可划转返利：{formatCurrency(availableBalanceInCents)}
+              当前可划转返利：{formatCurrency(commissionBalance)}
             </div>
             <Input
               type='number'
@@ -445,7 +385,9 @@ export function InvitePage() {
               className='bg-white/90 dark:bg-input/30'
             />
             <div className='flex flex-col gap-3 sm:flex-row'>
-              <Button className='w-full sm:w-auto' onClick={handleTransfer}>确认划转</Button>
+              <Button className='w-full sm:w-auto' onClick={handleTransfer} disabled={transferMutation.isPending}>
+                {transferMutation.isPending ? '划转中...' : '确认划转'}
+              </Button>
               <Button variant='outline' className='w-full bg-white/90 sm:w-auto dark:bg-transparent' onClick={() => setTransferOpen(false)}>取消</Button>
             </div>
           </div>

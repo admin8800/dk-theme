@@ -24,6 +24,15 @@ export type CreateOrderPayload = {
   coupon_code?: string;
 }
 
+export type CouponCheckResult = {
+  code: string
+  discount_amount?: number
+  valid: boolean
+  message?: string
+}
+
+type RawCouponCheckResult = Record<string, unknown> | boolean | null
+
 function normalizeCheckoutUrl(payload: CheckoutOrderResponse) {
   if (typeof payload === 'string') return payload
   if (payload && typeof payload === 'object') {
@@ -31,6 +40,27 @@ function normalizeCheckoutUrl(payload: CheckoutOrderResponse) {
     if (typeof payload.url === 'string') return payload.url
   }
   return ''
+}
+
+function toNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
+function normalizeCouponResult(code: string, payload: RawCouponCheckResult, message?: string): CouponCheckResult {
+  if (typeof payload === 'boolean') return { code, valid: payload, message }
+  if (!payload || typeof payload !== 'object') return { code, valid: true, message }
+
+  return {
+    code,
+    discount_amount: toNumber(payload.discount_amount ?? payload.discount ?? payload.amount),
+    valid: payload.valid == null ? true : Boolean(payload.valid),
+    message,
+  }
 }
 
 export async function getOrders() {
@@ -77,4 +107,31 @@ export async function createOrder(payload: CreateOrderPayload) {
   }
   const response = await apiClient.post<ApiEnvelope<string>>('/api/v1/user/order/save', payload)
   return response.data.data
+}
+
+export async function checkOrderStatus(tradeNo: string) {
+  if (appConfig.enableMock) {
+    const order = mockOrders.find((item) => item.trade_no === tradeNo)
+    return order?.status ?? 0
+  }
+
+  const response = await apiClient.get<ApiEnvelope<{ status?: number } | number>>(`/api/v1/user/order/check?trade_no=${encodeURIComponent(tradeNo)}`)
+  return typeof response.data.data === 'number' ? response.data.data : response.data.data?.status
+}
+
+export async function checkCoupon(code: string, planId?: number, period?: string) {
+  if (appConfig.enableMock) {
+    return {
+      code,
+      discount_amount: Math.max(100, Math.round(code.length * 50)),
+      valid: true,
+    } satisfies CouponCheckResult
+  }
+
+  const response = await apiClient.post<ApiEnvelope<RawCouponCheckResult>>('/api/v1/user/coupon/check', {
+    code,
+    plan_id: planId,
+    period,
+  })
+  return normalizeCouponResult(code, response.data.data, response.data.message)
 }
