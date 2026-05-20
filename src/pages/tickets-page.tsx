@@ -125,17 +125,12 @@ export function TicketsPage() {
   const ticketsQuery = useQuery({ queryKey: ['tickets'], queryFn: getTickets })
   const tickets = useMemo(() => sortTicketsByUpdatedAt(ticketsQuery.data ?? []), [ticketsQuery.data])
 
-  useEffect(() => {
-    if (!tickets.length) {
-      setSelectedTicketId(null)
-      return
+  const activeTicketId = useMemo(() => {
+    if (selectedTicketId && tickets.some((ticket) => ticket.id === selectedTicketId)) {
+      return selectedTicketId
     }
-
-    setSelectedTicketId((current) => {
-      if (current && tickets.some((ticket) => ticket.id === current)) return current
-      return tickets[0].id
-    })
-  }, [tickets])
+    return tickets[0]?.id ?? null
+  }, [selectedTicketId, tickets])
 
   const filteredTickets = useMemo(() => {
     const search = keyword.trim().toLowerCase()
@@ -163,9 +158,9 @@ export function TicketsPage() {
   }, [filter, keyword, tickets])
 
   const detailQuery = useQuery({
-    queryKey: ['ticket-detail', selectedTicketId],
-    queryFn: () => getTicketDetail(selectedTicketId as number),
-    enabled: selectedTicketId != null,
+    queryKey: ['ticket-detail', activeTicketId],
+    queryFn: () => getTicketDetail(activeTicketId as number),
+    enabled: activeTicketId != null,
   })
 
   const createTicketMutation = useMutation({
@@ -274,7 +269,7 @@ export function TicketsPage() {
   }
 
   function handleReplyTicket() {
-    if (!selectedTicketId) {
+    if (!activeTicketId) {
       toast.error('请先选择工单')
       return
     }
@@ -284,16 +279,16 @@ export function TicketsPage() {
       return
     }
 
-    replyTicketMutation.mutate({ id: selectedTicketId, message: replyMessage.trim() })
+    replyTicketMutation.mutate({ id: activeTicketId, message: replyMessage.trim() })
   }
 
   function handleCloseTicket() {
-    if (!selectedTicketId) {
+    if (!activeTicketId) {
       toast.error('请先选择工单')
       return
     }
 
-    closeTicketMutation.mutate(selectedTicketId)
+    closeTicketMutation.mutate(activeTicketId)
   }
 
   function handleReplyKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -418,7 +413,7 @@ export function TicketsPage() {
                   const ticketStatus = getTicketStatus(ticket)
                   const replyStatus = getReplyStatus(ticket)
                   const level = levelMap[ticket.level] ?? levelMap[0]
-                  const active = selectedTicketId === ticket.id
+                  const active = activeTicketId === ticket.id
 
                   return (
                     <button

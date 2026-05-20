@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Link, useNavigate } from 'react-router-dom'
-import { useAuth } from '@/features/auth/auth-context'
+import { useAuth } from '@/features/auth/auth-store'
 import type { Plan } from '@/lib/api/types'
 import { checkCoupon, createOrder, getOrders, type CouponCheckResult } from '@/lib/api/services/orders'
 import { getPlans } from '@/lib/api/services/user'
@@ -103,9 +103,10 @@ export function PlansPage() {
   const [couponCode, setCouponCode] = useState('')
   const [couponResult, setCouponResult] = useState<CouponCheckResult | null>(null)
 
-  const plans = plansQuery.data ?? []
-  const pendingOrders = (ordersQuery.data ?? []).filter((order) => order.status === 0)
-  const processingOrders = (ordersQuery.data ?? []).filter((order) => order.status === 1)
+  const plans = useMemo(() => plansQuery.data ?? [], [plansQuery.data])
+  const orders = useMemo(() => ordersQuery.data ?? [], [ordersQuery.data])
+  const pendingOrders = useMemo(() => orders.filter((order) => order.status === 0), [orders])
+  const processingOrders = useMemo(() => orders.filter((order) => order.status === 1), [orders])
   const latestPendingOrder = pendingOrders[0]
   const latestProcessingOrder = processingOrders[0]
   const currentPlanName = subscribe?.plan ?? user?.plan ?? '未选择套餐'

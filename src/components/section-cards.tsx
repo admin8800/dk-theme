@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { BellRing, CalendarClock, Gift, Layers3, LoaderCircle } from "lucide-react"
 import { toast } from "sonner"
 
-import { useAuth } from "@/features/auth/auth-context"
+import { useAuth } from "@/features/auth/auth-store"
 import { formatBytes, formatCurrency } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"

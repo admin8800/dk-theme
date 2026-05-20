@@ -13,7 +13,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from '@/components/ui/field'
-import { useAuth } from '@/features/auth/auth-context'
+import { useAuth } from '@/features/auth/auth-store'
 import { appConfig } from '@/lib/config'
 import { loginSchema, type LoginInput } from '@/lib/api/services/auth'
 

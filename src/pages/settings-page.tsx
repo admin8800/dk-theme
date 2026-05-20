@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BellRing, Gift, KeyRound, RefreshCcw, Send, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
@@ -24,12 +24,17 @@ import { checkGiftCard, redeemGiftCard } from '@/lib/api/services/gift-card'
 import { getApiErrorMessage } from '@/lib/api/errors'
 import { getUserInfo } from '@/lib/api/services/user'
 import type { UserInfo } from '@/lib/api/types'
-import { useAuth } from '@/features/auth/auth-context'
+import { useAuth } from '@/features/auth/auth-store'
 
 type PasswordForm = {
   old_password: string
   new_password: string
   new_password_2: string
+}
+
+type ReminderDraft = {
+  remindExpire: boolean
+  remindTraffic: boolean
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -96,17 +101,15 @@ export function SettingsPage() {
     new_password: '',
     new_password_2: '',
   })
-  const [remindExpire, setRemindExpire] = useState(true)
-  const [remindTraffic, setRemindTraffic] = useState(true)
+  const [reminderDraft, setReminderDraft] = useState<ReminderDraft | null>(null)
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
   const [giftCardCode, setGiftCardCode] = useState('')
 
-  useEffect(() => {
-    const user = userQuery.data
-    if (!user) return
-    setRemindExpire(user.remind_expire !== 0)
-    setRemindTraffic(user.remind_traffic !== 0)
-  }, [userQuery.data])
+  const serverRemindExpire = userQuery.data ? userQuery.data.remind_expire !== 0 : true
+  const serverRemindTraffic = userQuery.data ? userQuery.data.remind_traffic !== 0 : true
+  const remindExpire = reminderDraft?.remindExpire ?? serverRemindExpire
+  const remindTraffic = reminderDraft?.remindTraffic ?? serverRemindTraffic
+  const reminderForm = useMemo(() => ({ remindExpire, remindTraffic }), [remindExpire, remindTraffic])
 
   const passwordMutation = useMutation({
     mutationFn: changePassword,
@@ -122,6 +125,10 @@ export function SettingsPage() {
   const reminderMutation = useMutation({
     mutationFn: updateReminderSettings,
     onSuccess: (_data, variables) => {
+      setReminderDraft({
+        remindExpire: variables.remind_expire !== 0,
+        remindTraffic: variables.remind_traffic !== 0,
+      })
       queryClient.setQueryData<UserInfo | undefined>(['settings-user'], (current) => current
         ? {
             ...current,
@@ -133,9 +140,7 @@ export function SettingsPage() {
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, '通知设置保存失败，请稍后重试'))
-      const user = queryClient.getQueryData<UserInfo>(['settings-user'])
-      setRemindExpire(user?.remind_expire !== 0)
-      setRemindTraffic(user?.remind_traffic !== 0)
+      setReminderDraft(null)
     },
   })
 
@@ -203,8 +208,8 @@ export function SettingsPage() {
 
   function handleSaveReminderSettings() {
     reminderMutation.mutate({
-      remind_expire: remindExpire ? 1 : 0,
-      remind_traffic: remindTraffic ? 1 : 0,
+      remind_expire: reminderForm.remindExpire ? 1 : 0,
+      remind_traffic: reminderForm.remindTraffic ? 1 : 0,
     })
   }
 
@@ -298,7 +303,10 @@ export function SettingsPage() {
                   <Button
                     variant={remindExpire ? 'default' : 'outline'}
                     className={remindExpire ? 'w-full rounded-full sm:min-w-20 sm:w-auto' : 'w-full rounded-full bg-white/90 sm:min-w-20 sm:w-auto dark:bg-transparent'}
-                    onClick={() => setRemindExpire((value) => !value)}
+                    onClick={() => setReminderDraft((current) => ({
+                      remindExpire: !(current?.remindExpire ?? serverRemindExpire),
+                      remindTraffic: current?.remindTraffic ?? serverRemindTraffic,
+                    }))}
                   >
                     {remindExpire ? '已开启' : '已关闭'}
                   </Button>
@@ -313,7 +321,10 @@ export function SettingsPage() {
                   <Button
                     variant={remindTraffic ? 'default' : 'outline'}
                     className={remindTraffic ? 'w-full rounded-full sm:min-w-20 sm:w-auto' : 'w-full rounded-full bg-white/90 sm:min-w-20 sm:w-auto dark:bg-transparent'}
-                    onClick={() => setRemindTraffic((value) => !value)}
+                    onClick={() => setReminderDraft((current) => ({
+                      remindExpire: current?.remindExpire ?? serverRemindExpire,
+                      remindTraffic: !(current?.remindTraffic ?? serverRemindTraffic),
+                    }))}
                   >
                     {remindTraffic ? '已开启' : '已关闭'}
                   </Button>

@@ -35,7 +35,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { useAuth } from '@/features/auth/auth-context'
+import { useAuth } from '@/features/auth/auth-store'
 import { appConfig } from '@/lib/config'
 import { startNavigationProgress } from '@/lib/navigation-progress'
 

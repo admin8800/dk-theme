@@ -1,21 +1,10 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import type { SubscribeInfo, UserInfo } from '@/lib/api/types';
-import { login as loginRequest, logout as logoutRequest, type LoginInput } from '@/lib/api/services/auth';
+import { login as loginRequest, logout as logoutRequest } from '@/lib/api/services/auth';
 import { getSubscribeInfo, getUserInfo } from '@/lib/api/services/user';
 import { tokenStorage } from '@/lib/storage';
-
-type AuthContextValue = {
-  token: string | null;
-  user: UserInfo | null;
-  subscribe: SubscribeInfo | null;
-  hydrated: boolean;
-  login: (values: LoginInput) => Promise<void>;
-  logout: () => void;
-  refresh: () => Promise<void>;
-};
-
-const AuthContext = createContext<AuthContextValue | null>(null);
+import { AuthContext, type AuthContextValue } from '@/features/auth/auth-store';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(tokenStorage.get());
@@ -83,10 +72,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }), [hydrated, subscribe, token, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error('useAuth must be used within AuthProvider');
-  return context;
 }

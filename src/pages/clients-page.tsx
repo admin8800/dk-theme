@@ -35,7 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useAuth } from '@/features/auth/auth-context'
+import { useAuth } from '@/features/auth/auth-store'
 import { copyText } from '@/lib/clipboard'
 import { appConfig } from '@/lib/config'
 
@@ -262,37 +262,34 @@ export function ClientsPage() {
     ]
   }, [deviceType])
 
+  const activePlatformFilter = platformOptions.some((option) => option.value === platformFilter)
+    ? platformFilter
+    : platformOptions[0].value
+
   const filteredClients = useMemo(
-    () => clients.filter((client) => client.deviceTypes.includes(deviceType) && client.platforms.includes(platformFilter)),
-    [deviceType, platformFilter],
+    () => clients.filter((client) => client.deviceTypes.includes(deviceType) && client.platforms.includes(activePlatformFilter)),
+    [activePlatformFilter, deviceType],
   )
 
   const currentFilterDescription = useMemo(() => {
-    if (deviceType === 'desktop' && platformFilter === 'mac-apple-silicon') {
+    if (deviceType === 'desktop' && activePlatformFilter === 'mac-apple-silicon') {
       return '显示 Apple Silicon 可用客户端。'
     }
 
     if (deviceType === 'desktop') {
-      return `${desktopPlatformLabels[platformFilter as DesktopPlatform]} 客户端`
+      return `${desktopPlatformLabels[activePlatformFilter as DesktopPlatform]} 客户端`
     }
 
-    return `${mobilePlatformLabels[platformFilter as MobilePlatform]} 客户端`
-  }, [deviceType, platformFilter])
-
-  useEffect(() => {
-    if (deviceType === 'desktop' && !['windows', 'mac-intel', 'mac-apple-silicon'].includes(platformFilter)) {
-      setPlatformFilter('windows')
-    }
-
-    if (deviceType === 'mobile' && !['ios', 'android'].includes(platformFilter)) {
-      setPlatformFilter('ios')
-    }
-  }, [deviceType, platformFilter])
+    return `${mobilePlatformLabels[activePlatformFilter as MobilePlatform]} 客户端`
+  }, [activePlatformFilter, deviceType])
 
   useEffect(() => {
     if (!qrOpen) return
     let mounted = true
-    setQrLoading(true)
+    const frame = window.requestAnimationFrame(() => {
+      setQrLoading(true)
+      setQrDataUrl('')
+    })
     const isDark = document.documentElement.classList.contains('dark')
     QRCode.toDataURL(subscribeUrl, {
       margin: 1,
@@ -315,6 +312,7 @@ export function ClientsPage() {
 
     return () => {
       mounted = false
+      window.cancelAnimationFrame(frame)
     }
   }, [qrOpen, subscribeUrl])
 
@@ -324,7 +322,7 @@ export function ClientsPage() {
       setCopied(true)
       toast.success('订阅链接已复制到剪贴板')
       window.setTimeout(() => setCopied(false), 1500)
-    } catch (_) {
+    } catch {
       toast.error('复制失败，请手动复制订阅链接')
       setCopied(false)
     }
@@ -338,7 +336,7 @@ export function ClientsPage() {
   function handleSchemeImport(client: ClientItem) {
     if (!client.schemeBuilder) return
     const url = client.schemeBuilder(subscribeUrl)
-    window.location.href = url
+    window.location.assign(url)
     toast.success(`已尝试唤起 ${client.name} 导入`)
   }
 
@@ -393,8 +391,8 @@ export function ClientsPage() {
                     <Badge variant='outline' className='rounded-full border-slate-200/80 bg-white/80 dark:border-border/70 dark:bg-background/35'>{deviceType === 'desktop' ? '桌面端' : '移动端'}</Badge>
                     <Badge variant='outline' className='rounded-full border-slate-200/80 bg-white/80 dark:border-border/70 dark:bg-background/35'>
                       {deviceType === 'desktop'
-                        ? desktopPlatformLabels[platformFilter as DesktopPlatform]
-                        : mobilePlatformLabels[platformFilter as MobilePlatform]}
+                        ? desktopPlatformLabels[activePlatformFilter as DesktopPlatform]
+                        : mobilePlatformLabels[activePlatformFilter as MobilePlatform]}
                     </Badge>
                     <Badge variant='outline' className='rounded-full border-primary/15 bg-primary/8 text-primary dark:bg-primary/12'>{filteredClients.length} 个客户端</Badge>
                   </div>
@@ -414,7 +412,7 @@ export function ClientsPage() {
                   </div>
                   <div className='grid min-w-0 gap-2 md:w-[200px]'>
                     <div className='text-sm font-medium text-slate-700 dark:text-foreground'>系统平台</div>
-                    <Select value={platformFilter} onValueChange={(value: PlatformFilter) => setPlatformFilter(value)}>
+                    <Select value={activePlatformFilter} onValueChange={(value: PlatformFilter) => setPlatformFilter(value)}>
                       <SelectTrigger className='w-full rounded-2xl border-slate-200/80 bg-white/90 shadow-sm dark:border-border/70 dark:bg-background/35'>
                         <SelectValue placeholder='选择系统平台' />
                       </SelectTrigger>

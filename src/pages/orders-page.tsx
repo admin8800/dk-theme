@@ -24,7 +24,7 @@ import {
 } from '@/lib/api/services/orders'
 import { formatCurrency, formatDateTime } from '@/lib/format'
 import type { Order, OrderDetail, PaymentMethod } from '@/lib/api/types'
-import { useAuth } from '@/features/auth/auth-context'
+import { useAuth } from '@/features/auth/auth-store'
 
 const periodLabelMap: Record<string, string> = {
   month_price: '月付',
@@ -154,37 +154,35 @@ export function OrdersPage() {
     }
   }), [orderFilter, orders])
 
-  useEffect(() => {
-    if (!filteredOrders.length) {
-      setSelectedTradeNo(null)
-      return
+  const activeTradeNo = useMemo(() => {
+    if (highlightedTradeNo && filteredOrders.some((item) => item.trade_no === highlightedTradeNo)) {
+      return highlightedTradeNo
     }
+    if (selectedTradeNo && filteredOrders.some((item) => item.trade_no === selectedTradeNo)) {
+      return selectedTradeNo
+    }
+    return filteredOrders[0]?.trade_no ?? null
+  }, [filteredOrders, highlightedTradeNo, selectedTradeNo])
 
-    setSelectedTradeNo((current) => {
-      if (highlightedTradeNo && filteredOrders.some((item) => item.trade_no === highlightedTradeNo)) {
-        return highlightedTradeNo
-      }
-      if (current && filteredOrders.some((item) => item.trade_no === current)) return current
-      return filteredOrders[0].trade_no
-    })
-  }, [filteredOrders, highlightedTradeNo])
+  const activePaymentMethodId = useMemo(() => {
+    const methods = paymentMethodsQuery.data ?? []
+    if (selectedPaymentMethodId != null && methods.some((method) => method.id === selectedPaymentMethodId)) {
+      return selectedPaymentMethodId
+    }
+    return methods[0]?.id ?? null
+  }, [paymentMethodsQuery.data, selectedPaymentMethodId])
 
   useEffect(() => {
-    if (!highlightedTradeNo || selectedTradeNo !== highlightedTradeNo) return
+    if (!highlightedTradeNo || activeTradeNo !== highlightedTradeNo) return
     const next = new URLSearchParams(searchParams)
     next.delete('trade_no')
     setSearchParams(next, { replace: true })
-  }, [highlightedTradeNo, searchParams, selectedTradeNo, setSearchParams])
-
-  useEffect(() => {
-    if (!paymentMethodsQuery.data?.length) return
-    setSelectedPaymentMethodId((current) => current ?? paymentMethodsQuery.data?.[0]?.id ?? null)
-  }, [paymentMethodsQuery.data])
+  }, [activeTradeNo, highlightedTradeNo, searchParams, setSearchParams])
 
   const detailQuery = useQuery({
-    queryKey: ['order-detail', selectedTradeNo],
-    queryFn: () => getOrderDetail(selectedTradeNo as string),
-    enabled: selectedTradeNo != null,
+    queryKey: ['order-detail', activeTradeNo],
+    queryFn: () => getOrderDetail(activeTradeNo as string),
+    enabled: activeTradeNo != null,
     refetchInterval: (query) => {
       const detail = query.state.data as OrderDetail | undefined
       if (!detail) return false
@@ -198,19 +196,19 @@ export function OrdersPage() {
   const isFullyPaidByBalance = Boolean(detail && detail.total_amount <= 0)
 
   const orderStatusQuery = useQuery({
-    queryKey: ['order-status', selectedTradeNo],
-    queryFn: () => checkOrderStatus(selectedTradeNo as string),
-    enabled: selectedTradeNo != null && (detail?.status === 0 || detail?.status === 1),
+    queryKey: ['order-status', activeTradeNo],
+    queryFn: () => checkOrderStatus(activeTradeNo as string),
+    enabled: activeTradeNo != null && (detail?.status === 0 || detail?.status === 1),
     refetchInterval: 10000,
     refetchIntervalInBackground: true,
   })
   useEffect(() => {
-    if (!selectedTradeNo || orderStatusQuery.data == null) return
+    if (!activeTradeNo || orderStatusQuery.data == null) return
     queryClient.setQueryData<Order[]>(['orders'], (current) => sortOrders((current ?? []).map((item) => (
-      item.trade_no === selectedTradeNo ? { ...item, status: orderStatusQuery.data as number } : item
+      item.trade_no === activeTradeNo ? { ...item, status: orderStatusQuery.data as number } : item
     ))))
-    queryClient.setQueryData<OrderDetail | undefined>(['order-detail', selectedTradeNo], (current) => current ? { ...current, status: orderStatusQuery.data as number } : current)
-  }, [orderStatusQuery.data, queryClient, selectedTradeNo])
+    queryClient.setQueryData<OrderDetail | undefined>(['order-detail', activeTradeNo], (current) => current ? { ...current, status: orderStatusQuery.data as number } : current)
+  }, [activeTradeNo, orderStatusQuery.data, queryClient])
 
   const cancelOrderMutation = useMutation({
     mutationFn: cancelOrder,
@@ -256,28 +254,28 @@ export function OrdersPage() {
   const totalAmount = orders.reduce((sum, item) => sum + item.total_amount, 0)
 
   function handleCancelOrder() {
-    if (!selectedTradeNo) {
+    if (!activeTradeNo) {
       toast.error('请先选择订单')
       return
     }
-    cancelOrderMutation.mutate({ trade_no: selectedTradeNo })
+    cancelOrderMutation.mutate({ trade_no: activeTradeNo })
   }
 
   function handleCheckoutOrder() {
-    if (!selectedTradeNo) {
+    if (!activeTradeNo) {
       toast.error('请先选择订单')
       return
     }
     if (isFullyPaidByBalance) {
-      checkoutOrderMutation.mutate({ trade_no: selectedTradeNo, method: 0 })
+      checkoutOrderMutation.mutate({ trade_no: activeTradeNo, method: 0 })
       return
     }
 
-    if (selectedPaymentMethodId == null) {
+    if (activePaymentMethodId == null) {
       toast.error('请选择支付方式')
       return
     }
-    checkoutOrderMutation.mutate({ trade_no: selectedTradeNo, method: selectedPaymentMethodId })
+    checkoutOrderMutation.mutate({ trade_no: activeTradeNo, method: activePaymentMethodId })
   }
 
   return (
@@ -357,7 +355,7 @@ export function OrdersPage() {
                 ))
               ) : filteredOrders.map((order) => {
                 const status = getStatusMeta(order.status)
-                const active = order.trade_no === selectedTradeNo
+                const active = order.trade_no === activeTradeNo
                 const highlighted = order.trade_no === highlightedTradeNo
                 return (
                   <button
@@ -491,7 +489,7 @@ export function OrdersPage() {
                 支付方式加载失败，请稍后重试。
               </div>
             ) : !isFullyPaidByBalance && paymentMethodsQuery.data?.length ? paymentMethodsQuery.data.map((method: PaymentMethod) => {
-              const active = method.id === selectedPaymentMethodId
+              const active = method.id === activePaymentMethodId
               return (
                 <button
                   key={method.id}

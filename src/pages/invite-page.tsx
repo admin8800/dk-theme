@@ -26,7 +26,7 @@ import { transferCommissionToBalance } from '@/lib/api/services/account'
 import { generateInviteCode, getInviteDetails, getInviteStat, withdrawCommission } from '@/lib/api/services/invite'
 import { getApiErrorMessage } from '@/lib/api/errors'
 import { formatCurrency, formatDateTime } from '@/lib/format'
-import { useAuth } from '@/features/auth/auth-context'
+import { useAuth } from '@/features/auth/auth-store'
 
 type WithdrawalChannel = 'alipay' | 'usdt' | 'paypal'
 

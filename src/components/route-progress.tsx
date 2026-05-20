@@ -22,8 +22,11 @@ export function RouteProgress() {
   useEffect(() => {
     if (navigationSignal === 0) return
 
-    setVisible(true)
-    setProgress((current) => Math.max(current, 10))
+    const frame = window.requestAnimationFrame(() => {
+      setVisible(true)
+      setProgress((current) => Math.max(current, 10))
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [navigationSignal])
 
   useEffect(() => {
@@ -32,8 +35,11 @@ export function RouteProgress() {
       return
     }
 
-    setVisible(true)
-    setProgress((current) => Math.max(current, 18))
+    const frame = window.requestAnimationFrame(() => {
+      setVisible(true)
+      setProgress((current) => Math.max(current, 18))
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [location.key])
 
   useEffect(() => {
@@ -58,13 +64,14 @@ export function RouteProgress() {
 
     if (progress === 0) return
 
-    setProgress(100)
+    const frame = window.requestAnimationFrame(() => setProgress(100))
     finishTimeoutRef.current = window.setTimeout(() => {
       setVisible(false)
       setProgress(0)
     }, 260)
 
     return () => {
+      window.cancelAnimationFrame(frame)
       if (finishTimeoutRef.current) {
         window.clearTimeout(finishTimeoutRef.current)
         finishTimeoutRef.current = null

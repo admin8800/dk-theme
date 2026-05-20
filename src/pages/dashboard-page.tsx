@@ -7,7 +7,7 @@ import {
   CardDescription,
   CardTitle,
 } from '@/components/ui/card'
-import { useAuth } from '@/features/auth/auth-context'
+import { useAuth } from '@/features/auth/auth-store'
 import { getTrafficLogs } from '@/lib/api/services/traffic'
 import { formatBytes, formatCurrency, formatDateTime } from '@/lib/format'
 import { Activity, CalendarClock, CreditCard, Gauge, Layers3, Sparkles, TrendingUp, Zap } from 'lucide-react'

@@ -4,10 +4,21 @@ import type * as React from 'react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-export const Dialog = DialogPrimitive.Root;
-export const DialogTrigger = DialogPrimitive.Trigger;
-export const DialogPortal = DialogPrimitive.Portal;
-export const DialogClose = DialogPrimitive.Close;
+export function Dialog(props: DialogPrimitive.DialogProps) {
+  return <DialogPrimitive.Root {...props} />;
+}
+
+export function DialogTrigger(props: DialogPrimitive.DialogTriggerProps) {
+  return <DialogPrimitive.Trigger {...props} />;
+}
+
+export function DialogPortal(props: DialogPrimitive.DialogPortalProps) {
+  return <DialogPrimitive.Portal {...props} />;
+}
+
+export function DialogClose(props: DialogPrimitive.DialogCloseProps) {
+  return <DialogPrimitive.Close {...props} />;
+}
 
 export function DialogContent({ className, children, ...props }: DialogPrimitive.DialogContentProps & { children: ReactNode }) {
   return (
