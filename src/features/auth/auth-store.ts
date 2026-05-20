@@ -10,6 +10,7 @@ export type AuthContextValue = {
   login: (values: LoginInput) => Promise<void>
   logout: () => void
   refresh: () => Promise<void>
+  patchUser: (patch: Partial<UserInfo>) => void
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

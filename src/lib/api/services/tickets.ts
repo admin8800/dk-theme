@@ -37,7 +37,7 @@ export async function closeTicket(id: number) {
   if (appConfig.enableMock) {
     return { success: true, id };
   }
-  const response = await apiClient.post<ApiEnvelope<unknown>>('/api/v1/user/ticket/close', { id });
+  const response = await apiClient.post<ApiEnvelope<unknown>>(`/api/v1/user/ticket/close?id=${encodeURIComponent(id)}`);
   return response.data.data;
 }
 

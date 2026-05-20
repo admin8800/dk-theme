@@ -129,7 +129,7 @@ type OrderFilter = 'all' | 'pending' | 'completed' | 'cancelled'
 
 export function OrdersPage() {
   const queryClient = useQueryClient()
-  const { user, refresh } = useAuth()
+  const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const highlightedTradeNo = searchParams.get('trade_no')
   const [selectedTradeNo, setSelectedTradeNo] = useState<string | null>(null)
@@ -219,8 +219,6 @@ export function OrdersPage() {
       queryClient.setQueryData<OrderDetail | undefined>(['order-detail', variables.trade_no], (current) => current ? { ...current, status: 2 } : current)
       toast.success('订单已取消')
       setCancelDialogOpen(false)
-      void queryClient.invalidateQueries({ queryKey: ['orders'], refetchType: 'inactive' })
-      void queryClient.invalidateQueries({ queryKey: ['order-detail', variables.trade_no], refetchType: 'inactive' })
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, '取消订单失败，请稍后重试'))
@@ -236,9 +234,6 @@ export function OrdersPage() {
         item.trade_no === variables.trade_no ? { ...item, status: 1 } : item
       ))))
       queryClient.setQueryData<OrderDetail | undefined>(['order-detail', variables.trade_no], (current) => current ? { ...current, status: 1 } : current)
-      void queryClient.invalidateQueries({ queryKey: ['orders'], refetchType: 'inactive' })
-      void queryClient.invalidateQueries({ queryKey: ['order-detail', variables.trade_no], refetchType: 'inactive' })
-      void refresh()
       if (checkoutUrl) {
         window.open(checkoutUrl, '_blank', 'noopener,noreferrer')
       }

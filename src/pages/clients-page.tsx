@@ -229,7 +229,8 @@ const clients: ClientItem[] = [
 
 export function ClientsPage() {
   const { subscribe } = useAuth()
-  const subscribeUrl = subscribe?.subscribe_url ?? 'https://example.com/sub/demo-token'
+  const subscribeUrl = subscribe?.subscribe_url ?? ''
+  const hasSubscribeUrl = Boolean(subscribeUrl)
   const [copied, setCopied] = useState(false)
   const [qrOpen, setQrOpen] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState('')
@@ -285,11 +286,8 @@ export function ClientsPage() {
 
   useEffect(() => {
     if (!qrOpen) return
+    if (!subscribeUrl) return
     let mounted = true
-    const frame = window.requestAnimationFrame(() => {
-      setQrLoading(true)
-      setQrDataUrl('')
-    })
     const isDark = document.documentElement.classList.contains('dark')
     QRCode.toDataURL(subscribeUrl, {
       margin: 1,
@@ -312,11 +310,14 @@ export function ClientsPage() {
 
     return () => {
       mounted = false
-      window.cancelAnimationFrame(frame)
     }
   }, [qrOpen, subscribeUrl])
 
   async function copySubscribe() {
+    if (!subscribeUrl) {
+      toast.error('订阅信息暂不可用，请稍后重试')
+      return
+    }
     try {
       await copyText(subscribeUrl)
       setCopied(true)
@@ -329,12 +330,22 @@ export function ClientsPage() {
   }
 
   function openQr(clientName?: string) {
+    if (!subscribeUrl) {
+      toast.error('订阅信息暂不可用，请稍后重试')
+      return
+    }
     setActiveClient(clientName ?? null)
+    setQrLoading(true)
+    setQrDataUrl('')
     setQrOpen(true)
   }
 
   function handleSchemeImport(client: ClientItem) {
     if (!client.schemeBuilder) return
+    if (!subscribeUrl) {
+      toast.error('订阅信息暂不可用，请稍后重试')
+      return
+    }
     const url = client.schemeBuilder(subscribeUrl)
     window.location.assign(url)
     toast.success(`已尝试唤起 ${client.name} 导入`)
@@ -348,11 +359,11 @@ export function ClientsPage() {
           title='订阅中心'
           actions={
             <>
-              <Button variant='outline' className='rounded-full bg-white/90 dark:bg-transparent' onClick={copySubscribe}>
+              <Button variant='outline' className='rounded-full bg-white/90 dark:bg-transparent' onClick={copySubscribe} disabled={!hasSubscribeUrl}>
                 <IconCopy className='size-4' />
                 {copied ? '已复制订阅' : '复制订阅'}
               </Button>
-              <Button className='rounded-full' onClick={() => openQr()}>
+              <Button className='rounded-full' onClick={() => openQr()} disabled={!hasSubscribeUrl}>
                 <IconQrcode className='size-4' />
                 订阅二维码
               </Button>
@@ -507,16 +518,16 @@ export function ClientsPage() {
                             </Button>
                           )}
                           {client.supportsScheme ? (
-                            <Button variant='outline' className='min-h-10 w-full justify-center bg-white/90 sm:w-auto sm:min-w-[124px] dark:bg-transparent' onClick={() => handleSchemeImport(client)}>
+                            <Button variant='outline' className='min-h-10 w-full justify-center bg-white/90 sm:w-auto sm:min-w-[124px] dark:bg-transparent' onClick={() => handleSchemeImport(client)} disabled={!hasSubscribeUrl}>
                               <IconExternalLink className='size-4' />
                               {client.schemeLabel ?? '一键导入'}
                             </Button>
                           ) : null}
-                          <Button variant='outline' className='min-h-10 w-full justify-center bg-white/90 sm:w-auto sm:min-w-[124px] dark:bg-transparent' onClick={copySubscribe}>
+                          <Button variant='outline' className='min-h-10 w-full justify-center bg-white/90 sm:w-auto sm:min-w-[124px] dark:bg-transparent' onClick={copySubscribe} disabled={!hasSubscribeUrl}>
                             <IconLink className='size-4' />
                             复制订阅
                           </Button>
-                          <Button variant='outline' className='min-h-10 w-full justify-center bg-white/90 sm:w-auto sm:min-w-[124px] dark:bg-transparent' onClick={() => openQr(client.name)}>
+                          <Button variant='outline' className='min-h-10 w-full justify-center bg-white/90 sm:w-auto sm:min-w-[124px] dark:bg-transparent' onClick={() => openQr(client.name)} disabled={!hasSubscribeUrl}>
                             <IconQrcode className='size-4' />
                             扫码导入
                           </Button>

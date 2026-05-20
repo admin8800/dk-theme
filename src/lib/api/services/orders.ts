@@ -89,7 +89,7 @@ export async function cancelOrder(payload: CancelOrderPayload) {
   if (appConfig.enableMock) {
     return { success: true, payload };
   }
-  const response = await apiClient.post<ApiEnvelope<unknown>>('/api/v1/user/order/cancel', payload);
+  const response = await apiClient.post<ApiEnvelope<unknown>>(`/api/v1/user/order/cancel?trade_no=${encodeURIComponent(payload.trade_no)}`);
   return response.data.data;
 }
 
@@ -97,7 +97,7 @@ export async function checkoutOrder(payload: CheckoutOrderPayload) {
   if (appConfig.enableMock) {
     return 'https://example.com/mock-checkout';
   }
-  const response = await apiClient.post<ApiEnvelope<CheckoutOrderResponse>>('/api/v1/user/order/checkout', payload);
+  const response = await apiClient.post<ApiEnvelope<CheckoutOrderResponse>>(`/api/v1/user/order/checkout?trade_no=${encodeURIComponent(payload.trade_no)}&method=${encodeURIComponent(payload.method)}`);
   return normalizeCheckoutUrl(response.data.data);
 }
 

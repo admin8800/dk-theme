@@ -23,6 +23,8 @@ import { getTelegramBotInfo } from '@/lib/api/services/account'
 import { checkGiftCard, redeemGiftCard } from '@/lib/api/services/gift-card'
 import { getApiErrorMessage } from '@/lib/api/errors'
 import { getUserInfo } from '@/lib/api/services/user'
+import { getUserSiteConfig } from '@/lib/api/services/site'
+import { isReminderEnabled, toReminderFlag } from '@/lib/api/reminders'
 import type { UserInfo } from '@/lib/api/types'
 import { useAuth } from '@/features/auth/auth-store'
 
@@ -86,11 +88,13 @@ function SettingCardHeader({
 
 export function SettingsPage() {
   const queryClient = useQueryClient()
-  const { refresh } = useAuth()
+  const { refresh, patchUser } = useAuth()
   const userQuery = useQuery({ queryKey: ['settings-user'], queryFn: getUserInfo })
+  const siteConfigQuery = useQuery({ queryKey: ['user-site-config'], queryFn: getUserSiteConfig, staleTime: 5 * 60 * 1000 })
   const telegramQuery = useQuery({
     queryKey: ['telegram-bot-info'],
     queryFn: getTelegramBotInfo,
+    enabled: siteConfigQuery.data?.is_telegram === true,
     retry: false,
     refetchOnMount: false,
     staleTime: 5 * 60 * 1000,
@@ -105,8 +109,8 @@ export function SettingsPage() {
   const [resetDialogOpen, setResetDialogOpen] = useState(false)
   const [giftCardCode, setGiftCardCode] = useState('')
 
-  const serverRemindExpire = userQuery.data ? userQuery.data.remind_expire !== 0 : true
-  const serverRemindTraffic = userQuery.data ? userQuery.data.remind_traffic !== 0 : true
+  const serverRemindExpire = userQuery.data ? isReminderEnabled(userQuery.data.remind_expire) : true
+  const serverRemindTraffic = userQuery.data ? isReminderEnabled(userQuery.data.remind_traffic) : true
   const remindExpire = reminderDraft?.remindExpire ?? serverRemindExpire
   const remindTraffic = reminderDraft?.remindTraffic ?? serverRemindTraffic
   const reminderForm = useMemo(() => ({ remindExpire, remindTraffic }), [remindExpire, remindTraffic])
@@ -126,8 +130,8 @@ export function SettingsPage() {
     mutationFn: updateReminderSettings,
     onSuccess: (_data, variables) => {
       setReminderDraft({
-        remindExpire: variables.remind_expire !== 0,
-        remindTraffic: variables.remind_traffic !== 0,
+        remindExpire: isReminderEnabled(variables.remind_expire),
+        remindTraffic: isReminderEnabled(variables.remind_traffic),
       })
       queryClient.setQueryData<UserInfo | undefined>(['settings-user'], (current) => current
         ? {
@@ -136,6 +140,10 @@ export function SettingsPage() {
             remind_traffic: variables.remind_traffic,
           }
         : current)
+      patchUser({
+        remind_expire: variables.remind_expire,
+        remind_traffic: variables.remind_traffic,
+      })
       toast.success('通知设置已保存')
     },
     onError: (error) => {
@@ -175,13 +183,20 @@ export function SettingsPage() {
 
   const redeemGiftCardMutation = useMutation({
     mutationFn: redeemGiftCard,
-    onSuccess: async (result) => {
+    onSuccess: (result) => {
       toast.success(result.amount ? `礼品卡已兑换：${result.amount / 100} 元` : (result.message || '礼品卡已兑换'))
       setGiftCardCode('')
-      await Promise.all([
-        refresh(),
-        queryClient.invalidateQueries({ queryKey: ['settings-user'] }),
-      ])
+      if (result.amount) {
+        const amount = result.amount
+        const balance = (userQuery.data?.balance ?? 0) + amount
+        queryClient.setQueryData<UserInfo | undefined>(['settings-user'], (current) => {
+          if (!current) return current
+          return { ...current, balance }
+        })
+        patchUser({ balance })
+      } else {
+        void queryClient.invalidateQueries({ queryKey: ['settings-user'], refetchType: 'inactive' })
+      }
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error, '礼品卡兑换失败，请稍后重试'))
@@ -208,8 +223,8 @@ export function SettingsPage() {
 
   function handleSaveReminderSettings() {
     reminderMutation.mutate({
-      remind_expire: reminderForm.remindExpire ? 1 : 0,
-      remind_traffic: reminderForm.remindTraffic ? 1 : 0,
+      remind_expire: toReminderFlag(reminderForm.remindExpire),
+      remind_traffic: toReminderFlag(reminderForm.remindTraffic),
     })
   }
 
