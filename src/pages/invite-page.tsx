@@ -27,6 +27,7 @@ import { generateInviteCode, getInviteDetails, getInviteStat, withdrawCommission
 import { getApiErrorMessage } from '@/lib/api/errors'
 import { formatCurrency, formatDateTime } from '@/lib/format'
 import { useAuth } from '@/features/auth/auth-store'
+import type { InviteStat } from '@/lib/api/types'
 
 type WithdrawalChannel = 'alipay' | 'usdt' | 'paypal'
 
@@ -58,7 +59,7 @@ function isSuccessStatus(status: unknown) {
 
 export function InvitePage() {
   const queryClient = useQueryClient()
-  const { refresh } = useAuth()
+  const { user, patchUser } = useAuth()
   const inviteQuery = useQuery({ queryKey: ['invite'], queryFn: getInviteStat })
   const inviteDetailsQuery = useQuery({ queryKey: ['invite-details'], queryFn: getInviteDetails })
 
@@ -89,16 +90,16 @@ export function InvitePage() {
 
   const withdrawMutation = useMutation({
     mutationFn: withdrawCommission,
-    onSuccess: async () => {
+    onSuccess: () => {
       toast.success('提现申请已提交')
       setWithdrawChannel('alipay')
       setWithdrawAccount('')
       setWithdrawOpen(false)
-      await Promise.all([
-        refresh(),
-        queryClient.invalidateQueries({ queryKey: ['invite'] }),
-        queryClient.invalidateQueries({ queryKey: ['invite-details'] }),
-      ])
+      queryClient.setQueryData<InviteStat | undefined>(['invite'], (current) => current
+        ? { ...current, stat: { ...current.stat, commission_balance: 0 } }
+        : current)
+      patchUser({ commission_balance: 0 })
+      void queryClient.invalidateQueries({ queryKey: ['invite-details'], refetchType: 'inactive' })
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error, '提现申请提交失败，请稍后重试'))
@@ -107,14 +108,20 @@ export function InvitePage() {
 
   const transferMutation = useMutation({
     mutationFn: transferCommissionToBalance,
-    onSuccess: async () => {
+    onSuccess: (_data, amount) => {
       toast.success('佣金已划转到账户余额')
       setTransferAmount('')
       setTransferOpen(false)
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['invite'] }),
-        queryClient.invalidateQueries({ queryKey: ['invite-details'] }),
-      ])
+      const nextCommissionBalance = Math.max(0, commissionBalance - (amount ?? 0))
+      const nextBalance = amount == null ? undefined : (user?.balance ?? 0) + amount
+      queryClient.setQueryData<InviteStat | undefined>(['invite'], (current) => current
+        ? { ...current, stat: { ...current.stat, commission_balance: nextCommissionBalance } }
+        : current)
+      patchUser({
+        commission_balance: nextCommissionBalance,
+        ...(nextBalance == null ? {} : { balance: nextBalance }),
+      })
+      void queryClient.invalidateQueries({ queryKey: ['invite-details'], refetchType: 'inactive' })
     },
     onError: (error) => {
       toast.error(getApiErrorMessage(error, '佣金划转失败，请稍后重试'))

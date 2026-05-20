@@ -61,6 +61,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSubscribe(nextSubscribe);
     },
     refresh: refreshAuthState,
+    patchUser(patch) {
+      setUser((current) => current ? { ...current, ...patch } : current);
+    },
     logout() {
       void logoutRequest();
       setToken(null);

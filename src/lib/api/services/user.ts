@@ -11,12 +11,21 @@ function normalizeUserInfo(user: UserInfo): UserInfo {
   return user
 }
 
+function normalizeSubscribeUrl(value: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return ''
+  return new URL(value.trim(), appConfig.apiBaseUrl).toString()
+}
+
 function normalizeSubscribeInfo(subscribe: RawSubscribeInfo): SubscribeInfo {
-  return {
+  const normalized = {
     ...subscribe,
     plan: typeof subscribe.plan === 'string'
       ? subscribe.plan
       : subscribe.plan?.name ?? null,
+  }
+  return {
+    ...normalized,
+    subscribe_url: normalizeSubscribeUrl(normalized.subscribe_url),
   }
 }
 

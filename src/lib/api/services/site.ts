@@ -12,11 +12,18 @@ export type SiteConfig = {
   is_recaptcha?: boolean
   recaptcha_site_key?: string
   register_enabled?: boolean
+  is_telegram?: boolean
   telegram_discuss_link?: string
   telegram_group_link?: string
 }
 
 type RawSiteConfig = Record<string, unknown>
+
+function objectValue(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as RawSiteConfig
+    : {}
+}
 
 function boolValue(value: unknown, fallback = false) {
   if (typeof value === 'boolean') return value
@@ -30,11 +37,14 @@ function stringValue(value: unknown) {
 }
 
 function normalizeSiteConfig(raw: RawSiteConfig = {}): SiteConfig {
+  const site = objectValue(raw.site)
+  const telegram = objectValue(raw.telegram)
+
   return {
-    app_name: stringValue(raw.app_name ?? raw.name ?? raw.site_name),
-    description: stringValue(raw.description ?? raw.app_description),
-    logo: stringValue(raw.logo),
-    tos_url: stringValue(raw.tos_url),
+    app_name: stringValue(raw.app_name ?? raw.name ?? raw.site_name ?? site.app_name),
+    description: stringValue(raw.description ?? raw.app_description ?? site.app_description),
+    logo: stringValue(raw.logo ?? site.logo),
+    tos_url: stringValue(raw.tos_url ?? site.tos_url),
     is_email_verify: boolValue(raw.is_email_verify ?? raw.email_verify),
     is_invite_force: boolValue(raw.is_invite_force ?? raw.invite_force),
     is_recaptcha: boolValue(raw.is_recaptcha ?? raw.recaptcha_enable),
@@ -42,8 +52,9 @@ function normalizeSiteConfig(raw: RawSiteConfig = {}): SiteConfig {
     register_enabled: raw.register_enable == null && raw.is_register == null
       ? true
       : boolValue(raw.register_enable ?? raw.is_register, true),
-    telegram_discuss_link: stringValue(raw.telegram_discuss_link),
-    telegram_group_link: stringValue(raw.telegram_group_link),
+    is_telegram: boolValue(raw.is_telegram ?? raw.telegram_enable ?? telegram.telegram_bot_enable),
+    telegram_discuss_link: stringValue(raw.telegram_discuss_link ?? telegram.telegram_discuss_link),
+    telegram_group_link: stringValue(raw.telegram_group_link ?? telegram.telegram_group_link),
   }
 }
 

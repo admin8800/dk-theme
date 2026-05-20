@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { updateReminderSettings } from "@/lib/api/services/settings"
+import { isReminderEnabled, toReminderFlag } from "@/lib/api/reminders"
 import type { UserInfo } from "@/lib/api/types"
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -70,12 +71,12 @@ function CompactMetricCard({ title, value, hint, badge, icon }: CompactMetricCar
 
 export function SectionCards() {
   const queryClient = useQueryClient()
-  const { user } = useAuth()
+  const { user, patchUser } = useAuth()
   const used = user?.d ?? 0
   const total = user?.transfer_enable ?? 0
   const usageRate = total ? Math.round((used / total) * 100) : 0
-  const [remindExpire, setRemindExpire] = useState(user?.remind_expire !== 0)
-  const [remindTraffic, setRemindTraffic] = useState(user?.remind_traffic !== 0)
+  const [remindExpire, setRemindExpire] = useState(isReminderEnabled(user?.remind_expire))
+  const [remindTraffic, setRemindTraffic] = useState(isReminderEnabled(user?.remind_traffic))
 
   const resetCountdown = useMemo(() => getDaysUntilNextMonthReset(), [])
   const alertState = remindExpire && remindTraffic
@@ -98,13 +99,17 @@ export function SectionCards() {
             }
           : current,
       )
+      patchUser({
+        remind_expire: variables.remind_expire,
+        remind_traffic: variables.remind_traffic,
+      })
       toast.success('通知设置已更新')
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, '通知设置更新失败，请稍后重试'))
       const current = queryClient.getQueryData<UserInfo>(['settings-user'])
-      setRemindExpire(current?.remind_expire !== 0)
-      setRemindTraffic(current?.remind_traffic !== 0)
+      setRemindExpire(isReminderEnabled(current?.remind_expire))
+      setRemindTraffic(isReminderEnabled(current?.remind_traffic))
     },
   })
 
@@ -115,8 +120,8 @@ export function SectionCards() {
     setRemindExpire(nextExpire)
     setRemindTraffic(nextTraffic)
     reminderMutation.mutate({
-      remind_expire: nextExpire ? 1 : 0,
-      remind_traffic: nextTraffic ? 1 : 0,
+      remind_expire: toReminderFlag(nextExpire),
+      remind_traffic: toReminderFlag(nextTraffic),
     })
   }
 

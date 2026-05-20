@@ -191,9 +191,6 @@ export function TicketsPage() {
 
       queryClient.setQueryData<TicketDetail | undefined>(['ticket-detail', variables.id], (current) => appendReplyToDetail(current, variables.message, now))
 
-      void queryClient.invalidateQueries({ queryKey: ['tickets'], refetchType: 'inactive' })
-      void queryClient.invalidateQueries({ queryKey: ['ticket-detail', variables.id], refetchType: 'inactive' })
-
       toast.success('工单回复已提交')
       setReplyMessage('')
       replyTextareaRef.current?.focus()
@@ -222,9 +219,6 @@ export function TicketsPage() {
           updated_at: now,
         }
       })
-
-      void queryClient.invalidateQueries({ queryKey: ['tickets'], refetchType: 'inactive' })
-      void queryClient.invalidateQueries({ queryKey: ['ticket-detail', ticketId], refetchType: 'inactive' })
 
       toast.success('工单已关闭')
       setCloseConfirmOpen(false)

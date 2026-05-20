@@ -25,7 +25,7 @@ export async function updateReminderSettings(payload: UpdateReminderPayload) {
   if (appConfig.enableMock) {
     return { success: true, payload };
   }
-  const response = await apiClient.post<ApiEnvelope<unknown>>('/api/v1/user/update', payload);
+  const response = await apiClient.post<ApiEnvelope<unknown>>('/api/v1/user/update', payload, { timeout: 4000 });
   return response.data.data;
 }
 
