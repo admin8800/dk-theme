@@ -56,30 +56,24 @@ VITE_ENABLE_MOCK=false
 
 ## 部署
 
-### Nginx
+### 前端Caddy配置
+
+使用`/`自动从当前域名获取
+
+> 建议后端部署在其他服务器实现隐藏后端
 
 ```
-server {
-    listen 80;
-    server_name your-domain.com;
-    root /var/www/dist;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
-### Caddy
-```
-your-domain.com {
-    root * /var/www/dist
+example.com {
     encode zstd gzip
-    try_files {path} /index.html
-    file_server
 
-    reverse_proxy /api/* https://backend.example.com {
-        header_up Host {upstream_hostport}
+    handle /api/* {
+        reverse_proxy 127.0.0.1:7001
+    }
+
+    handle {
+        root * /var/www/dist
+        try_files {path} /index.html
+        file_server
     }
 }
 ```
