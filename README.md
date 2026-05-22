@@ -2,16 +2,6 @@
 
 一个基于 React + Vite + TypeScript 的前端主题工程，适用于 XBoard / V2Board 风格面板，可自行修改站点名、后端地址、客服入口与下载链接后重新构建部署。
 
-## 快速开始
-
-```bash
-npm install
-cp .env.example .env
-npm run dev
-```
-
-启动后按需修改 `.env` 配置即可。
-
 ## 构建
 
 ```bash
@@ -23,19 +13,12 @@ npm run build
 构建产物输出到：
 - `dist/`
 
-如需导出独立静态发布目录：
-
-```bash
-npm run export:release
-```
-
 ## 常用配置
 
 主要配置文件：
 - `.env`
 - `.env.example`
 - `src/lib/config.ts`
-
 
 ## 改成你自己的站点
 
@@ -45,10 +28,9 @@ npm run export:release
 VITE_APP_NAME=你的站点名
 ```
 
-改成你自己的后端：
-
+修改站点域名
 ```env
-VITE_API_BASE_URL=https://your-domain.com
+VITE_API_BASE_URL=https://example.com
 VITE_ENABLE_MOCK=false
 ```
 
@@ -57,8 +39,10 @@ VITE_ENABLE_MOCK=false
 ## 部署
 
 ### 前端Caddy配置
-
-使用`/`自动从当前域名获取
+将主题配置里的域名修改为你的前端域名
+```
+VITE_API_BASE_URL=https://example.com
+```
 
 > 建议后端部署在其他服务器实现隐藏后端
 
